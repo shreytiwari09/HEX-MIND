@@ -88,6 +88,7 @@ async def create_mission(
             idea=idea,
             branch=branch,
             budget_usd=budget_usd,
+            validation_contract=[c.model_dump() for c in plan.validation_contract],
         )
         session.add(mission)
         await session.flush()
@@ -119,6 +120,10 @@ async def create_mission(
         await append_event(session, run.id, EventType.RUN_CREATED, payload={"title": plan.title})
         await _mission_status_event(session, run.id, mission.status, None, "plan received")
         await sync_mission_folder(session, mission, worktree)
+        if plan.validation_contract:
+            await run_in_threadpool(
+                folder.write_validation_contract, worktree, mission.validation_contract
+            )
     except BaseException:
         await run_in_threadpool(git.remove_worktree, root, worktree)
         await run_in_threadpool(git.delete_branch, root, branch)

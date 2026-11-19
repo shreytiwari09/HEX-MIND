@@ -71,6 +71,7 @@ def main() -> None:
     parser.add_argument("--allowed-images", required=True)
     parser.add_argument("--check-timeout", type=int, default=120)
     parser.add_argument("--writable", default="", help="exact extra paths agents may write")
+    parser.add_argument("--write-only", default="", help="confine writes to these folders")
     args = parser.parse_args()
     tools = WorkspaceTools(
         args.root,
@@ -78,6 +79,7 @@ def main() -> None:
         allowed_images=args.allowed_images.split(","),
         check_timeout_s=args.check_timeout,
         writable_extra=frozenset(p for p in args.writable.split(",") if p),
+        write_only=tuple(p for p in args.write_only.split(",") if p),
     )
     build_server(tools).run("stdio")
 

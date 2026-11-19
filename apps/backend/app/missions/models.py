@@ -118,6 +118,21 @@ class MissionContext:
         return self.worktree / ".hex" / "mission"
 
 
+How = Literal["unit test", "api test", "browser", "typecheck", "security review"]
+# What QA's acceptance tests can check. The rest is covered by other validators or by browser
+# testing (not available in this build).
+TESTABLE: tuple[str, ...] = ("unit test", "api test")
+
+
+class Criterion(BaseModel):
+    """One checkable statement in the validation contract (PRD §9.7)."""
+
+    id: str = Field(pattern=r"^VC-\d+(\.\d+)*$")
+    text: str = Field(min_length=3, max_length=300)
+    how: How  # how it is checked
+    feature: str | None = None  # the feature it belongs to
+
+
 class MilestonePlan(BaseModel):
     id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,63}$")
     title: str = Field(min_length=3, max_length=120)
@@ -130,6 +145,7 @@ class MissionPlan(BaseModel):
 
     title: str = Field(min_length=3, max_length=120)
     milestones: list[MilestonePlan] = Field(min_length=1, max_length=8)
+    validation_contract: list[Criterion] = Field(default_factory=list, max_length=100)
 
     @model_validator(mode="after")
     def _check(self) -> "MissionPlan":
@@ -138,9 +154,17 @@ class MissionPlan(BaseModel):
         personas = builtin_personas()
         milestone_ids = [m.id for m in self.milestones]
         feature_ids = [f.id for m in self.milestones for f in m.features]
-        for kind, ids in (("milestone", milestone_ids), ("feature", feature_ids)):
+        criterion_ids = [c.id for c in self.validation_contract]
+        for kind, ids in (
+            ("milestone", milestone_ids),
+            ("feature", feature_ids),
+            ("criterion", criterion_ids),
+        ):
             if len(ids) != len(set(ids)):
                 raise ValueError(f"{kind} ids must be unique within a mission")
+        for criterion in self.validation_contract:
+            if criterion.feature is not None and criterion.feature not in feature_ids:
+                raise ValueError(f"criterion {criterion.id}: no feature {criterion.feature!r}")
         for milestone in self.milestones:
             for name in milestone.validators:
                 if name not in personas or personas[name].kind != "validator":

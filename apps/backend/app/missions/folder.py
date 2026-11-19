@@ -51,3 +51,22 @@ def write_validator_report(worktree: Path, report: ValidatorReport, round_no: in
     path = mission_dir(worktree) / "validator-reports" / name
     _atomic_write(path, report.model_dump_json(indent=2) + "\n")
     return path
+
+
+def render_validation_contract(criteria: list[dict]) -> str:  # type: ignore[type-arg]
+    """The validation contract as the markdown QA reads (PRD §9.7), grouped by feature."""
+    lines = ["# Validation contract", ""]
+    groups: dict[str, list[dict]] = {}  # type: ignore[type-arg]
+    for criterion in criteria:
+        groups.setdefault(criterion.get("feature") or "(whole mission)", []).append(criterion)
+    for feature, items in groups.items():
+        lines += [f"## {feature}", ""]
+        lines += [f"- {c['id']}: {c['text']}   [{c['how']}]" for c in items]
+        lines.append("")
+    return "\n".join(lines)
+
+
+def write_validation_contract(worktree: Path, criteria: list[dict]) -> Path:  # type: ignore[type-arg]
+    path = mission_dir(worktree) / "validation-contract.md"
+    _atomic_write(path, render_validation_contract(criteria))
+    return path

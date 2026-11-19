@@ -12,7 +12,7 @@ It never reports `pass` for work it did not check.
 import asyncio
 import re
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from fastapi.concurrency import run_in_threadpool
@@ -34,6 +34,8 @@ from app.workspace import git
 MAX_DIFF_CHARS = 12_000
 OUTPUT_IN_REPORT = 1500
 STANDARD_CHECKS = ("test", "typecheck", "lint")
+ACCEPTANCE_DIR = "tests/acceptance"
+_CONTRACT_ID = re.compile(r"VC-\d+(?:\.\d+)*")
 DEPENDENCY_FILES = frozenset(
     {
         "package.json",
@@ -71,6 +73,9 @@ class ValidationContext:
     # The sandbox: run a named check, and read the project's check commands as they are now.
     run_check: Callable[[str], Awaitable[CheckOutcome]]
     load_checks: Callable[[], Awaitable[dict[str, str]]]
+    # This milestone's validation-contract criteria, as stored on the mission.
+    criteria: list[dict] = field(default_factory=list)  # type: ignore[type-arg]
+    acceptance_ready: bool = False
 
 
 def _blocked(errors: list[str]) -> roles.ReviewResult:
@@ -349,7 +354,92 @@ Your final answer must be only a JSON object: {roles.REVIEW_SCHEMA}"""
     )
 
 
+# ---------- QA ----------
+
+
+async def run_qa(
+    vc: ValidationContext, milestone_key: str, features: list[FeatureSnap]
+) -> ValidatorReport:
+    """Run the acceptance tests QA wrote from the validation contract, in the sandbox. Criteria
+    that need a browser are reported as not checked (browser testing is not available yet):
+    they are never counted as passing."""
+    findings: list[Finding] = []
+    commands: list[CommandResult] = []
+    unavailable = False
+    checks = await vc.load_checks()
+    acceptance_dir = vc.worktree / ACCEPTANCE_DIR
+    has_tests = acceptance_dir.is_dir() and any(p.is_file() for p in acceptance_dir.rglob("*"))
+
+    if not vc.acceptance_ready or not has_tests:
+        unavailable = True
+        findings.append(
+            Finding(
+                severity="info",
+                message="QA has not written acceptance tests for this milestone, so nothing "
+                "was checked against the validation contract.",
+            )
+        )
+    elif "acceptance" not in checks:
+        unavailable = True
+        findings.append(
+            Finding(
+                severity="info",
+                message="The project defines no `acceptance` check, so the acceptance tests "
+                "cannot run. Add one to .hex/project.json.",
+            )
+        )
+    else:
+        outcome = await vc.run_check("acceptance")
+        commands.append(
+            CommandResult(
+                command=checks["acceptance"],
+                exit_code=outcome.exit_code if outcome.exit_code is not None else -1,
+                duration_s=outcome.duration_ms / 1000,
+                summary=outcome.output_tail[-OUTPUT_IN_REPORT:],
+            )
+        )
+        if not accepted(outcome):
+            refs = list(dict.fromkeys(_CONTRACT_ID.findall(outcome.output_tail)))
+            reason = "ran no tests" if outcome.passed else "failed"
+            if refs:
+                findings.extend(
+                    Finding(
+                        severity="critical",
+                        message=f"The acceptance check {reason} for {ref}.",
+                        contract_ref=ref,
+                        evidence=check_summary(outcome),
+                    )
+                    for ref in refs
+                )
+            else:
+                findings.append(
+                    Finding(
+                        severity="critical",
+                        message=f"The acceptance check {reason}.",
+                        evidence=check_summary(outcome),
+                    )
+                )
+
+    unchecked = [c["id"] for c in vc.criteria if c.get("how") == "browser"]
+    if unchecked:
+        findings.append(
+            Finding(
+                severity="info",
+                message="Not checked (browser testing is not available in this build): "
+                + ", ".join(unchecked),
+            )
+        )
+    return ValidatorReport(
+        validator="qa",
+        milestone_id=milestone_key,
+        verdict=_verdict(findings, unavailable),  # type: ignore[arg-type]
+        findings=findings,
+        commands=commands,
+    )
+
+
 VALIDATORS: dict[str, Callable[..., Awaitable[ValidatorReport]]] = {
+    "qa": run_qa,
     "code-reviewer": run_scrutiny,
     "security": run_security,
 }

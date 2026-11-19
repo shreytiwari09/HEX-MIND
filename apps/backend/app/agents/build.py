@@ -29,9 +29,11 @@ REPORT_EXPECTED = (
 )
 
 
-def tool_names_for(persona: Persona) -> tuple[str, ...]:
-    """Only workers may change files; everyone else reads (PRD §12.6 allow-lists)."""
-    return CODER if persona.kind == "worker" else READ_ONLY
+def tool_names_for(persona: Persona, *, acceptance: bool = False) -> tuple[str, ...]:
+    """Only workers may change files; everyone else reads (PRD §12.6 allow-lists). QA is given
+    write tools only to write acceptance tests, and the path guard confines them to
+    `tests/acceptance/`."""
+    return CODER if persona.kind == "worker" or acceptance else READ_ONLY
 
 
 def build_agent(
@@ -58,7 +60,12 @@ def build_agent(
 
 
 def feature_prompt(
-    persona: Persona, feature: Feature, ctx: MissionContext, feedback: str | None = None
+    persona: Persona,
+    feature: Feature,
+    ctx: MissionContext,
+    feedback: str | None = None,
+    *,
+    acceptance: bool = False,
 ) -> str:
     """The task the agent works on: the feature spec, then what earlier features left for it."""
     lines = [
@@ -83,7 +90,17 @@ def feature_prompt(
     lines += ["", "Work from earlier features:", *_handoff_lines(ctx.earlier_handoffs)]
     if feedback:
         lines += ["", "Your previous attempt was not accepted. Fix this first:", feedback]
-    if persona.kind == "worker":
+    if acceptance:
+        lines += [
+            "",
+            "Write acceptance tests for the expected behaviour above, from the validation contract "
+            "only: do not read the implementation to decide what to test. Put them in "
+            "tests/acceptance/ (the only place you can write), name each test with the contract "
+            'id it checks (for example "VC-2.3 sign-up"), run the `acceptance` check with '
+            "run_check, and fix test mistakes. The tests may fail until the features exist: that "
+            "is expected.",
+        ]
+    elif persona.kind == "worker":
         lines += [
             "",
             "Read the relevant files first, then change files only with write_file or "

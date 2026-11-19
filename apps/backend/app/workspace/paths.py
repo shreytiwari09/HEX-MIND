@@ -17,6 +17,9 @@ _WRITE_PROTECTED_DIRS = frozenset({".git"})
 # write them, except the exact files a persona is given (DevOps writes the run contract), because
 # a worker that could rewrite the checks, the plan or the handoffs could make its own work pass.
 _AGENT_READ_ONLY_TOP_DIRS = frozenset({".hex"})
+# QA's acceptance tests (PRD §8.5): builders can read them but cannot edit them, so a builder
+# cannot make its own work pass. Only a persona given this prefix as its sole write area (QA).
+ACCEPTANCE_DIR = "tests/acceptance"
 # Agents additionally may not touch the project profile (it defines which commands the
 # sandbox runs), dependencies, or secrets.
 _AGENT_PROTECTED_DIRS = _WRITE_PROTECTED_DIRS | {".hexmind", "node_modules"}
@@ -57,11 +60,14 @@ def resolve_in_workspace(
     for_write: bool = False,
     agent: bool = False,
     agent_writable: frozenset[str] = frozenset(),
+    agent_write_only: tuple[str, ...] = (),
 ) -> Path:
     """Resolve `rel` under `root`, following symlinks, and reject anything outside it.
 
     `agent=True` applies the stricter policy used for agent tool calls (reads and writes).
     `agent_writable` lists exact paths an agent may write inside otherwise read-only areas.
+    `agent_write_only`, when set, confines an agent's writes to those folders (QA writes only
+    `tests/acceptance/`); without it, `tests/acceptance/` is read-only for agents.
     """
     normalized = normalize_relative(rel)
     lowered = [part.lower() for part in normalized.parts]
@@ -80,6 +86,25 @@ def resolve_in_workspace(
         and normalized.as_posix() not in agent_writable
     ):
         raise PathViolation(f"'{normalized}' is managed by H.E.X Mind and is read-only for agents")
+
+    if agent and for_write:
+        posix = normalized.as_posix().lower()
+        in_acceptance = posix == ACCEPTANCE_DIR or posix.startswith(ACCEPTANCE_DIR + "/")
+        if agent_write_only:
+            allowed = any(
+                posix == p.rstrip("/").lower() or posix.startswith(p.rstrip("/").lower() + "/")
+                for p in agent_write_only
+            )
+            if not allowed:
+                raise PathViolation(
+                    f"'{normalized}' is outside the folders you may write: "
+                    + ", ".join(agent_write_only)
+                )
+        elif in_acceptance:
+            raise PathViolation(
+                f"'{normalized}' is an acceptance test: only QA writes those, so work cannot "
+                "be made to pass by editing them"
+            )
 
     root_real = root.resolve(strict=True)
     candidate = (root_real.joinpath(*normalized.parts)).resolve(strict=False)

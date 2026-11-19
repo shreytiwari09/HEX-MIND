@@ -50,6 +50,13 @@ export interface MissionApply {
   include_mission_files: boolean
 }
 
+export interface Criterion {
+  id: string
+  text: string
+  how: 'unit test' | 'api test' | 'browser' | 'typecheck' | 'security review'
+  feature: string | null
+}
+
 export interface Mission {
   id: string
   project_id: string
@@ -66,6 +73,7 @@ export interface Mission {
   started_at: string | null
   finished_at: string | null
   milestones: MissionMilestone[]
+  validation_contract: Criterion[]
   apply: MissionApply | null
 }
 

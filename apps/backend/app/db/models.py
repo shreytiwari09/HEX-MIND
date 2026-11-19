@@ -331,6 +331,8 @@ class Mission(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # What Apply wrote into the user's project (for revert); see missions/apply.py.
     apply_record: Mapped[dict[str, Any] | None] = mapped_column()
+    # The approved validation contract: [{id, text, how, feature}] (PRD §9.7).
+    validation_contract: Mapped[list[Any]] = mapped_column(default=list)
 
 
 class Milestone(Base):
@@ -344,6 +346,8 @@ class Milestone(Base):
     position: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(16), default="pending")
     validators: Mapped[list[str]] = mapped_column(default=list)
+    # QA has written this milestone's acceptance tests (before its features are built).
+    acceptance_ready: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
 
 class FeatureRow(Base):

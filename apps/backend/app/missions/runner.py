@@ -50,6 +50,7 @@ from app.db.models import (
 from app.events.log import EventType, append_event
 from app.missions import folder, service
 from app.missions.models import (
+    TESTABLE,
     AgentReport,
     CommandResult,
     Feature,
@@ -154,6 +155,7 @@ class MissionRunner:
                 continue
             if status not in ("completed", "failed"):  # features still to build
                 await self._set_milestone(milestone_id, "active")
+                await self._write_acceptance_tests(milestone_id)
                 for key in await self._open_feature_keys(milestone_id):
                     if await self._build_feature(key) != "done":
                         return await self._settle()
@@ -626,6 +628,88 @@ class MissionRunner:
                     evidence={"error": detail},
                 )
 
+    # ---------- QA acceptance tests (PRD §8.5) ----------
+
+    async def _write_acceptance_tests(self, milestone_id: uuid.UUID) -> None:
+        """Before a milestone is built, QA writes acceptance tests from the validation contract,
+        independently of the builders. They go in `tests/acceptance/`, which only QA can write,
+        and are committed so builders start from them."""
+        assert self.telemetry is not None and self.services.a2a_http is not None
+        async with self.services.sessionmaker() as session:
+            milestone = await session.get(Milestone, milestone_id)
+            mission = await session.get(Mission, self.mission_id)
+            assert milestone is not None and mission is not None
+            if "qa" not in milestone.validators or milestone.acceptance_ready:
+                return
+            keys = set(
+                await session.scalars(
+                    select(FeatureRow.key).where(FeatureRow.milestone_id == milestone_id)
+                )
+            )
+            criteria = [
+                c
+                for c in mission.validation_contract or []
+                if c.get("feature") in keys and c.get("how") in TESTABLE
+            ]
+            key, title = milestone.key, milestone.title
+        if not criteria:
+            return  # nothing testable to write tests for
+        before = await run_in_threadpool(git.head, self.worktree)
+        feature = Feature(
+            id=f"acceptance-{key}",
+            title=f"Acceptance tests: {title}",
+            persona="qa",
+            description="Write acceptance tests for this milestone from its validation contract.",
+            expected_behavior=[f"{c['id']}: {c['text']}  [{c['how']}]" for c in criteria],
+        )
+        for attempt in range(1, 3):
+            request = PersonaRequest(
+                exchange_id=uuid.uuid4(),
+                run_id=self.run_id,
+                agent_id=f"qa_acceptance_{attempt:02d}",
+                worktree=str(self.worktree),
+                workspace=str(self.workspace),
+                persona_id="qa",
+                feature=feature,
+                mode="acceptance",
+            )
+            try:
+                await call_crew(
+                    "persona",
+                    hub=self.telemetry,
+                    http=self.services.a2a_http,
+                    settings=self.services.settings,
+                    prompt=f"Acceptance tests for {key}",
+                    request=request,
+                    parent="mission_runner",
+                )
+            except CrewCallFailed as exc:
+                logger.warning("QA could not write acceptance tests for %s: %s", key, exc)
+                continue
+            changes = [
+                c
+                for c in await run_in_threadpool(git.diff, self.worktree, before)
+                if not c.path.startswith(".hex/")
+            ]
+            if any(not c.path.startswith("tests/acceptance/") for c in changes):
+                await run_in_threadpool(git.reset_to, self.worktree, before)  # not QA's to change
+                continue
+            if not changes:
+                continue
+            async with self.services.sessionmaker.begin() as session:
+                mission = await session.get(Mission, self.mission_id)
+                milestone = await session.get(Milestone, milestone_id)
+                assert mission is not None and milestone is not None
+                sha = await run_in_threadpool(
+                    git.commit_all, self.worktree, f"Acceptance tests: {key}"
+                )
+                await service.add_checkpoint(
+                    session, mission, commit=sha, label=f"Acceptance tests: {title}"
+                )
+                milestone.acceptance_ready = True
+            return
+        # No acceptance tests were written; the QA validator will say so rather than pass.
+
     # ---------- validators (PRD §8.5) ----------
 
     async def _validate(self, milestone_id: uuid.UUID) -> Literal["ok", "stopped"]:
@@ -694,7 +778,22 @@ class MissionRunner:
             )
             return profile.checks
 
+        async with self.services.sessionmaker() as session:
+            milestone_row = await session.get(Milestone, milestone_id)
+            mission_row = await session.get(Mission, self.mission_id)
+            assert milestone_row is not None and mission_row is not None
+            ready = milestone_row.acceptance_ready
+            keys = set(
+                await session.scalars(
+                    select(FeatureRow.key).where(FeatureRow.milestone_id == milestone_id)
+                )
+            )
+            criteria = [
+                c for c in mission_row.validation_contract or [] if c.get("feature") in keys
+            ]
         vc = ValidationContext(
+            criteria=criteria,
+            acceptance_ready=ready,
             services=self.services,
             mission_id=self.mission_id,
             run_id=self.run_id,

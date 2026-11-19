@@ -54,6 +54,8 @@ class PersonaRequest(CrewRequest):
     feedback: str | None = None
     # The last attempt runs on the persona's escalation model, if it has one (PRD §8.6, §10.5).
     escalate: bool = False
+    # "acceptance": QA writes acceptance tests (PRD §8.5), confined to tests/acceptance/.
+    mode: Literal["feature", "acceptance"] = "feature"
     expected_output: str = REPORT_EXPECTED
 
 

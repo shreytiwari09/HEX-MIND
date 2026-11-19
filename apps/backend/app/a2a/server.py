@@ -53,6 +53,7 @@ from app.providers.assignments import route_for
 from app.providers.router import CallContext
 from app.sandbox.contract import CONTRACT_PATH, DOCKERFILE_PATH
 from app.telemetry.hub import TelemetryHub
+from app.workspace.paths import ACCEPTANCE_DIR
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer("hexmind.a2a")
@@ -183,6 +184,7 @@ class CrewExecutor(AgentExecutor):
             allowed_images=settings.sandbox_images,
             check_timeout_s=settings.sandbox_timeout_s,
             writable=_writable_for(request),
+            write_only=_write_only_for(request),
         )
         await run_in_threadpool(mcp.start)
         try:
@@ -201,7 +203,14 @@ class CrewExecutor(AgentExecutor):
                     route=await self._route(persona, getattr(request, "escalate", False)),
                     persona_id=persona.id if persona else None,
                 ),
-                purpose=persona.purpose if persona else _crew_purpose(self.role),
+                # Writing tests is coding work, whatever the persona's usual role.
+                purpose=(
+                    "coder"
+                    if isinstance(request, PersonaRequest) and request.mode == "acceptance"
+                    else persona.purpose
+                    if persona
+                    else _crew_purpose(self.role)
+                ),
                 native_tools=settings.native_tool_calling,
             )
 
@@ -227,10 +236,20 @@ class CrewExecutor(AgentExecutor):
                     request.feature,
                     ctx,
                     llm=llm,
-                    tools=make_tools(mcp, tool_names_for(persona), listener),
+                    tools=make_tools(
+                        mcp,
+                        tool_names_for(persona, acceptance=request.mode == "acceptance"),
+                        listener,
+                    ),
                     max_iter=settings.agent_max_iterations,
                 )
-                prompt = feature_prompt(persona, request.feature, ctx, request.feedback)
+                prompt = feature_prompt(
+                    persona,
+                    request.feature,
+                    ctx,
+                    request.feedback,
+                    acceptance=request.mode == "acceptance",
+                )
             else:
                 factory = roles.planner if self.role == "planner" else roles.coder
                 names = READ_ONLY if self.role == "planner" else CODER
@@ -259,6 +278,13 @@ def _writable_for(request: CrewRequest) -> tuple[str, ...]:
     run contract and its Dockerfile (PRD §9.6), nobody else writes anything there."""
     if isinstance(request, PersonaRequest) and request.persona_id == "devops":
         return (CONTRACT_PATH, DOCKERFILE_PATH)
+    return ()
+
+
+def _write_only_for(request: CrewRequest) -> tuple[str, ...]:
+    """QA writing acceptance tests may write nothing but `tests/acceptance/`."""
+    if isinstance(request, PersonaRequest) and request.mode == "acceptance":
+        return (ACCEPTANCE_DIR,)
     return ()
 
 

@@ -41,6 +41,7 @@ export function mission(extra: Partial<Mission> = {}): Mission {
     started_at: '2026-11-19T10:00:00Z',
     finished_at: null,
     apply: null,
+    validation_contract: [],
     milestones: [
       {
         id: 'm1-a',

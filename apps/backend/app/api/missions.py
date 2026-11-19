@@ -87,6 +87,7 @@ class MissionOut(BaseModel):
     finished_at: datetime | None
     milestones: list[MilestoneOut]
     apply: ApplyOut | None
+    validation_contract: list[dict]  # type: ignore[type-arg]
 
 
 async def _mission_out(session: SessionDep, mission: Mission) -> MissionOut:
@@ -109,6 +110,7 @@ async def _mission_out(session: SessionDep, mission: Mission) -> MissionOut:
         finished_at=mission.finished_at,
         milestones=[MilestoneOut.model_validate(m) for m in document["milestones"]],
         apply=_apply_out(mission.apply_record),
+        validation_contract=mission.validation_contract or [],
     )
 
 

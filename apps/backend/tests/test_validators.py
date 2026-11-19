@@ -18,7 +18,13 @@ from app.context.redact import find_secrets
 from app.db.models import HandoffRow, Milestone, ValidatorReportRow
 from app.events.log import list_events
 from app.missions.models import Finding
-from app.missions.validators import _findings_from, _verdict, added_lines, changed_files
+from app.missions.validators import (
+    VALIDATORS,
+    _findings_from,
+    _verdict,
+    added_lines,
+    changed_files,
+)
 from app.providers.base import Completion, LLMRequest, ProviderError
 from app.sandbox.runner import docker_available
 from tests.conftest import ScriptedAdapter, use_adapter
@@ -370,9 +376,10 @@ async def test_a_validator_that_cannot_run_is_never_a_pass_and_retry_checks_agai
 
 
 @needs_docker
-async def test_validators_the_build_does_not_have_yet_do_not_block_or_pass_a_milestone(
-    app: FastAPI, client: httpx.AsyncClient, repo: Path
+async def test_a_validator_the_build_does_not_have_does_not_block_or_pass_a_milestone(
+    app: FastAPI, client: httpx.AsyncClient, repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.delitem(VALIDATORS, "qa")  # as if QA were not built
     use_adapter(app, ScriptedAdapter(Validators(Script())))
     mission = await new_mission(client, repo, plan_with_validators(["qa"]))
 

@@ -33,12 +33,14 @@ class WorkspaceTools:
         allowed_images: list[str],
         check_timeout_s: int,
         writable_extra: frozenset[str] = frozenset(),
+        write_only: tuple[str, ...] = (),
     ) -> None:
         self.root = root.resolve()
         self.workspace = workspace
         self.allowed_images = allowed_images
         self.check_timeout_s = check_timeout_s
         self.writable_extra = writable_extra
+        self.write_only = write_only
 
     def _path(self, rel: str, *, write: bool = False) -> Path:
         try:
@@ -48,6 +50,7 @@ class WorkspaceTools:
                 for_write=write,
                 agent=True,
                 agent_writable=self.writable_extra,
+                agent_write_only=self.write_only,
             )
         except ValueError as exc:
             raise ToolError(str(exc)) from None

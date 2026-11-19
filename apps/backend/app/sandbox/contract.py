@@ -19,7 +19,7 @@ CONTRACT_PATH = ".hex/project.json"
 DOCKERFILE_PATH = ".hex/Dockerfile"
 MAX_BYTES = 20_000
 # The checks an agent or validator can run by name.
-CHECK_NAMES = ("install", "build", "test", "typecheck", "lint")
+CHECK_NAMES = ("install", "build", "test", "typecheck", "lint", "acceptance")
 
 NetworkMode = Literal["none", "allowlist"]
 
@@ -45,12 +45,14 @@ class RunContract(BaseModel):
     test: str | None = None
     typecheck: str | None = None
     lint: str | None = None
+    # Runs the acceptance tests QA writes in tests/acceptance/ (PRD §8.5).
+    acceptance: str | None = None
     start: str | None = None
     port: int | None = Field(default=None, ge=1, le=65535)
     healthcheck: str | None = Field(default=None, max_length=200)
     network: NetworkPolicy = Field(default_factory=NetworkPolicy)
 
-    @field_validator("install", "build", "test", "typecheck", "lint", "start")
+    @field_validator("install", "build", "test", "typecheck", "lint", "acceptance", "start")
     @classmethod
     def _one_line_command(cls, value: str | None) -> str | None:
         if value is None:
