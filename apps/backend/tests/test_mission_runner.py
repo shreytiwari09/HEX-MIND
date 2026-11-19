@@ -27,7 +27,6 @@ from app.db.models import (
 from app.events.log import list_events
 from app.providers.base import Completion, LLMRequest, ProviderError, ToolCall
 from app.sandbox.runner import docker_available
-from app.workspace import git
 from tests.conftest import ScriptedAdapter, use_adapter
 from tests.test_missions import git_output
 from tests.test_run_workflow import FILTER_JS, FILTER_TEST, TODOS_JS, TODOS_TEST
@@ -139,15 +138,6 @@ class GatedAdapter(ScriptedAdapter):
             self.reached.set()
             await self.gate.wait()
         return await super().complete(request)
-
-
-@pytest.fixture
-def repo(tmp_path: Path) -> Path:
-    root = tmp_path / "todo-app"
-    root.mkdir()
-    (root / "README.md").write_bytes(b"# Todo app\n")
-    git.init_repo(root)
-    return root
 
 
 async def new_mission(

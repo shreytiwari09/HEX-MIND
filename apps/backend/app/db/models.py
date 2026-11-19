@@ -322,6 +322,8 @@ class Mission(Base):
     updated_at: Mapped[datetime] = _updated_at()
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # What Apply wrote into the user's project (for revert); see missions/apply.py.
+    apply_record: Mapped[dict[str, Any] | None] = mapped_column()
 
 
 class Milestone(Base):

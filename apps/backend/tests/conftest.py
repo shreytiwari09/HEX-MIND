@@ -110,6 +110,16 @@ def workspace(tmp_path: Path) -> Path:
     return root
 
 
+@pytest.fixture
+def repo(tmp_path: Path) -> Path:
+    """A small git repository for missions."""
+    root = tmp_path / "todo-app"
+    root.mkdir()
+    (root / "README.md").write_bytes(b"# Todo app\n")
+    git.init_repo(root)
+    return root
+
+
 # ---------- Scripted LLM provider ----------
 
 

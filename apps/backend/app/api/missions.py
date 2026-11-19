@@ -9,8 +9,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.api.deps import ServicesDep, SessionDep, SettingsDep
+from app.api.schemas import FileDiffOut, RunDiffOut
 from app.db.models import Mission, Need, Project
-from app.missions import service
+from app.missions import lifecycle, service
+from app.missions.apply import Refused
 from app.missions.models import MissionPlan
 
 router = APIRouter(prefix="/missions", tags=["missions"])
@@ -47,6 +49,16 @@ class MilestoneOut(BaseModel):
     features: list[FeatureOut]
 
 
+class ApplyOut(BaseModel):
+    """What Apply wrote into the user's project (None until the mission is applied)."""
+
+    state: str  # applied | reverted
+    files: list[str]
+    commit: str | None
+    commit_error: str | None
+    include_mission_files: bool
+
+
 class MissionOut(BaseModel):
     id: uuid.UUID
     project_id: uuid.UUID
@@ -61,6 +73,7 @@ class MissionOut(BaseModel):
     started_at: datetime | None
     finished_at: datetime | None
     milestones: list[MilestoneOut]
+    apply: ApplyOut | None
 
 
 async def _mission_out(session: SessionDep, mission: Mission) -> MissionOut:
@@ -79,6 +92,19 @@ async def _mission_out(session: SessionDep, mission: Mission) -> MissionOut:
         started_at=mission.started_at,
         finished_at=mission.finished_at,
         milestones=[MilestoneOut.model_validate(m) for m in document["milestones"]],
+        apply=_apply_out(mission.apply_record),
+    )
+
+
+def _apply_out(record: dict | None) -> ApplyOut | None:
+    if not record:
+        return None
+    return ApplyOut(
+        state=record["state"],
+        files=[f["path"] for f in record["files"]],
+        commit=record.get("commit"),
+        commit_error=record.get("commit_error"),
+        include_mission_files=record["include_mission_files"],
     )
 
 
@@ -245,3 +271,127 @@ async def answer_need(
     else:
         await service.settle_cancelled(services, mission.id)
     return await _mission_out(session, mission)
+
+
+# ---------- review, apply, revert, restore (PRD §8.8) ----------
+
+
+def _refuse(exc: Refused) -> HTTPException:
+    return HTTPException(exc.status_code, exc.detail)
+
+
+async def _after(session: SessionDep, mission_id: uuid.UUID) -> MissionOut:
+    session.expire_all()
+    return await _mission_out(session, await _get(session, mission_id))
+
+
+@router.get("/{mission_id}/diff", response_model=RunDiffOut)
+async def get_diff(mission_id: uuid.UUID, services: ServicesDep) -> RunDiffOut:
+    """The proposed changes, live from the mission worktree, for review before Apply."""
+    try:
+        ctx, files = await lifecycle.mission_diff(services, mission_id)
+    except Refused as exc:
+        raise _refuse(exc) from None
+    return RunDiffOut(
+        run_id=ctx.run.id,
+        base_commit=ctx.run.base_commit,
+        files=[FileDiffOut(**f) for f in files],
+    )
+
+
+class ApplyRequest(BaseModel):
+    # None: follow the server setting (the `.hex/` mission files are applied by default).
+    include_mission_files: bool | None = None
+    commit: bool = True  # record the result as a commit on the user's current branch
+
+
+@router.post("/{mission_id}/apply", response_model=MissionOut)
+async def apply_mission(
+    mission_id: uuid.UUID,
+    session: SessionDep,
+    services: ServicesDep,
+    body: ApplyRequest | None = None,
+) -> MissionOut:
+    """Write the mission's changes into the user's project (explicit user action)."""
+    await _get(session, mission_id)
+    body = body or ApplyRequest()
+    try:
+        await lifecycle.apply_mission(
+            services,
+            mission_id,
+            include_mission_files=body.include_mission_files,
+            commit=body.commit,
+        )
+    except Refused as exc:
+        raise _refuse(exc) from None
+    return await _after(session, mission_id)
+
+
+@router.post("/{mission_id}/revert", response_model=MissionOut)
+async def revert_mission(
+    mission_id: uuid.UUID, session: SessionDep, services: ServicesDep
+) -> MissionOut:
+    await _get(session, mission_id)
+    try:
+        await lifecycle.revert_mission(services, mission_id)
+    except Refused as exc:
+        raise _refuse(exc) from None
+    return await _after(session, mission_id)
+
+
+@router.post("/{mission_id}/keep", response_model=MissionOut)
+async def keep_mission(
+    mission_id: uuid.UUID, session: SessionDep, services: ServicesDep
+) -> MissionOut:
+    await _get(session, mission_id)
+    try:
+        await lifecycle.keep_mission(services, mission_id)
+    except Refused as exc:
+        raise _refuse(exc) from None
+    return await _after(session, mission_id)
+
+
+@router.post("/{mission_id}/discard", response_model=MissionOut)
+async def discard_mission(
+    mission_id: uuid.UUID, session: SessionDep, services: ServicesDep
+) -> MissionOut:
+    await _get(session, mission_id)
+    try:
+        await lifecycle.discard_mission(services, mission_id)
+    except Refused as exc:
+        raise _refuse(exc) from None
+    return await _after(session, mission_id)
+
+
+class CheckpointOut(BaseModel):
+    commit: str
+    label: str
+    feature_id: uuid.UUID | None
+    created_at: datetime
+
+
+@router.get("/{mission_id}/checkpoints", response_model=list[CheckpointOut])
+async def list_checkpoints(mission_id: uuid.UUID, services: ServicesDep) -> list[CheckpointOut]:
+    try:
+        rows = await lifecycle.list_checkpoints(services, mission_id)
+    except Refused as exc:
+        raise _refuse(exc) from None
+    return [
+        CheckpointOut(
+            commit=c.commit, label=c.label, feature_id=c.feature_id, created_at=c.created_at
+        )
+        for c in rows
+    ]
+
+
+@router.post("/{mission_id}/checkpoints/{commit}/restore", response_model=MissionOut)
+async def restore_checkpoint(
+    mission_id: uuid.UUID, commit: str, session: SessionDep, services: ServicesDep
+) -> MissionOut:
+    """Rewind the mission to a feature's checkpoint; it comes back paused, ready to resume."""
+    await _get(session, mission_id)
+    try:
+        await lifecycle.restore_checkpoint(services, mission_id, commit)
+    except Refused as exc:
+        raise _refuse(exc) from None
+    return await _after(session, mission_id)

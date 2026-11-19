@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     provider_order_by_complexity: dict[str, list[str]] = {}
     # How long a provider is skipped after quota exhaustion (unless it sends Retry-After).
     quota_cooldown_s: float = 300
+    # Apply also writes the mission's `.hex/` files (docs, run contract) into the user's project.
+    apply_mission_files: bool = True
     # Agents use native (structured) tool calls; False falls back to CrewAI's text ReAct.
     native_tool_calling: bool = True
 

@@ -91,6 +91,22 @@ def remove_worktree(root: Path, path: Path) -> None:
     _git(root, "worktree", "prune", check=False)
 
 
+def file_bytes(root: Path, commit: str, path: str) -> bytes | None:
+    """Exact file bytes at a commit (binary-safe), or None if it does not exist there."""
+    result = subprocess.run(
+        ["git", "show", f"{commit}:{path}"], cwd=root, capture_output=True, timeout=120
+    )
+    return result.stdout if result.returncode == 0 else None
+
+
+def commit_paths(root: Path, paths: list[str], message: str) -> str:
+    """Commit only `paths` on the current branch, leaving everything else the user has staged
+    or changed alone. Returns the new commit."""
+    _git(root, "add", "-A", "--", *paths)
+    _git(root, *AUTHOR, "commit", "-q", "-m", message, "--", *paths)
+    return head(root)
+
+
 def commit_all(worktree: Path, message: str) -> str:
     """Commit everything in the worktree (a checkpoint) and return the new commit."""
     _git(worktree, "add", "-A")
