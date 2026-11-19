@@ -83,6 +83,7 @@ async def run_persona(
     persona_id: str,
     feat: Feature,
     earlier: list[Handoff] | None = None,
+    escalate: bool = False,
 ) -> str:
     services = app.state.services
     request = PersonaRequest(
@@ -94,6 +95,7 @@ async def run_persona(
         persona_id=persona_id,
         feature=feat,
         earlier_handoffs=earlier or [],
+        escalate=escalate,
     )
     return await call_crew(
         "persona",

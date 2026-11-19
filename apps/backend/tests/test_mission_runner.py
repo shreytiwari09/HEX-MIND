@@ -461,3 +461,27 @@ async def test_lifecycle_guards(app: FastAPI, client: httpx.AsyncClient, repo: P
     assert (await approve(client, mission)).status_code == 409  # already approved
     await finish(app)
     assert (await client.get(f"/api/missions/{mission['id']}/needs")).json() == []
+
+
+async def test_only_the_last_attempt_asks_for_the_escalation_model(
+    app: FastAPI, client: httpx.AsyncClient, repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.missions import runner as runner_module
+
+    seen: list[bool] = []
+    real = runner_module.call_crew
+
+    async def spy(role: str, **kwargs: Any) -> str:
+        seen.append(kwargs["request"].escalate)
+        return await real(role, **kwargs)
+
+    monkeypatch.setattr(runner_module, "call_crew", spy)
+    script = Script({("Todo model", 0): [], ("Filter helper", 0): GOOD["Filter helper"]})
+    use_adapter(app, ScriptedAdapter(script))
+    mission = await new_mission(client, repo)
+
+    await approve(client, mission)
+    await finish(app)
+
+    # Three attempts at the failing feature: the first two normal, the third escalated.
+    assert seen == [False, False, True]

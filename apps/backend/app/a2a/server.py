@@ -166,12 +166,12 @@ class CrewExecutor(AgentExecutor):
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         raise NotImplementedError("crew runs cannot be cancelled mid-task")
 
-    async def _route(self, persona: Any) -> Any:
+    async def _route(self, persona: Any, escalate: bool = False) -> Any:
         """The persona's assigned models, or None to use the global provider order."""
         if persona is None:
             return None
         async with self.services.sessionmaker() as session:
-            return await route_for(session, persona.id)
+            return await route_for(session, persona.id, escalate=escalate)
 
     async def _run_crew(self, request: CrewRequest, prompt: str, hub: TelemetryHub) -> str:
         settings = self.services.settings
@@ -196,7 +196,7 @@ class CrewExecutor(AgentExecutor):
                     task_id=request.task_id,
                     agent_id=request.agent_id,
                     complexity=request.complexity,
-                    route=await self._route(persona),
+                    route=await self._route(persona, getattr(request, "escalate", False)),
                 ),
                 purpose=persona.purpose if persona else _crew_purpose(self.role),
                 native_tools=settings.native_tool_calling,

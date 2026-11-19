@@ -1,0 +1,52 @@
+# What each persona needs from a model (PRD §10.4). The assigner picks, from the models the user
+# can actually reach, one that meets these minimums.
+#
+# min:      lowest acceptable tier (1-5, see model_profiles.yaml) per capability.
+# min_context: smallest context window, in tokens (a model whose window is unknown fails it).
+# focus:    the capabilities that decide "strongest" for this role.
+# critical: the Balanced preset spends on quality for these roles and saves on the rest.
+#
+# Every persona that uses tools needs tool_use. These are requirements, not model names: a new
+# model qualifies by its profile, with no change here.
+roles:
+  pm:
+    min: {reasoning: 5, tool_use: 4}
+    min_context: 128000
+    focus: [reasoning, tool_use]
+    critical: true
+  security:
+    min: {reasoning: 5, tool_use: 3}
+    focus: [reasoning]
+    critical: true
+  code-reviewer:
+    min: {reasoning: 4, coding: 4, tool_use: 3}
+    focus: [coding, reasoning]
+    critical: false
+  backend:
+    min: {coding: 4, tool_use: 4}
+    focus: [coding, tool_use]
+    critical: false
+  frontend:
+    min: {coding: 4, tool_use: 4}
+    focus: [coding, tool_use]
+    critical: false
+  designer:
+    min: {ui: 4, tool_use: 3}
+    focus: [ui]
+    critical: false
+  data:
+    min: {coding: 3, tool_use: 3}
+    focus: [coding]
+    critical: false
+  qa:
+    min: {reasoning: 3, tool_use: 3}
+    focus: [tool_use, reasoning]
+    critical: false
+  researcher:
+    min: {tool_use: 2}
+    focus: [tool_use]
+    critical: false
+  devops:
+    min: {coding: 2, tool_use: 3}
+    focus: [coding]
+    critical: false

@@ -48,7 +48,12 @@ async def _check(session: AsyncSession, ref: ModelRef, what: str) -> Connection:
 
 
 async def set_assignment(
-    session: AsyncSession, persona_id: str, body: AssignmentIn
+    session: AsyncSession,
+    persona_id: str,
+    body: AssignmentIn,
+    *,
+    set_by: str = "user",
+    reason: str | None = None,
 ) -> ModelAssignment:
     await _check(session, body.primary, "primary")
     for ref in body.fallbacks:
@@ -65,9 +70,10 @@ async def set_assignment(
     row.primary_model = body.primary.model
     row.fallbacks = [_dump(r) for r in body.fallbacks]
     row.escalate = _dump(body.escalate) if body.escalate else None
-    row.set_by = "user"
-    row.reason = None
+    row.set_by = set_by
+    row.reason = reason
     await session.flush()
+    await session.refresh(row)  # `updated_at` is set by the database on every update
     return row
 
 
@@ -75,8 +81,12 @@ def _dump(ref: ModelRef) -> dict[str, Any]:
     return {"connection_id": str(ref.connection_id), "model": ref.model}
 
 
-async def route_for(session: AsyncSession, persona_id: str) -> Route | None:
-    """The persona's route (primary, then fallbacks), or None if it has no assignment."""
+async def route_for(
+    session: AsyncSession, persona_id: str, *, escalate: bool = False
+) -> Route | None:
+    """The persona's route (primary, then fallbacks), or None if it has no assignment. With
+    `escalate`, the escalation model goes first and the normal route follows as its fallback
+    (so a persona with no escalation model gets its normal route)."""
     row = await session.scalar(
         select(ModelAssignment).where(ModelAssignment.persona_id == persona_id)
     )
@@ -86,4 +96,14 @@ async def route_for(session: AsyncSession, persona_id: str) -> Route | None:
     targets += [
         Target(uuid.UUID(item["connection_id"]), item["model"]) for item in row.fallbacks or []
     ]
+    if escalate and row.escalate:
+        stronger = Target(uuid.UUID(row.escalate["connection_id"]), row.escalate["model"])
+        targets = [stronger, *[t for t in targets if t != stronger]]
     return Route(tuple(targets), persona_id=persona_id)
+
+
+async def has_escalation(session: AsyncSession, persona_id: str) -> bool:
+    row = await session.scalar(
+        select(ModelAssignment).where(ModelAssignment.persona_id == persona_id)
+    )
+    return row is not None and row.escalate is not None

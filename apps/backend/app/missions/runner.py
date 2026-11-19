@@ -13,9 +13,8 @@ each feature the runner:
 A rejected attempt is retried with the exact findings, up to `MAX_ATTEMPTS`. When attempts run
 out the mission stops in "Needs you" with the evidence. Provider outages (the provider layer
 has already retried and fallen back) do not count as attempts. Budget exhaustion also stops the
-mission in "Needs you". The escalation model (attempt 3 on a stronger model) arrives with P4's
-model assignment, and PM re-planning with P5, so the later attempts today repeat the persona's
-current model.
+mission in "Needs you". The last attempt runs on the persona's escalation model when it has one
+(PRD §10.5); a persona without one repeats its normal model. PM re-planning arrives with P5.
 
 Pause and stop are honoured between steps: the step in flight finishes, then the runner exits.
 """
@@ -267,6 +266,8 @@ class MissionRunner:
             feature=feature,
             earlier_handoffs=earlier,
             feedback=feedback,
+            # Cascade principle (PRD §10.5): escalate only when earlier attempts failed.
+            escalate=number >= MAX_ATTEMPTS,
         )
         try:
             text = await call_crew(

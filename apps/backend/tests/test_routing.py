@@ -446,3 +446,151 @@ async def test_a_persona_crew_call_is_served_through_its_assigned_route(
     assert [c.error is None for c in calls] == [False, True, True]
     # After the rotation the pool stayed on key 2 for the rest of the feature.
     assert [which for _, which in world.provider.calls] == ["a1", "a2", "a2"]
+
+
+# ---------- Auto assignment and escalation (P4 step 4) ----------
+
+
+async def _auto_world(app: FastAPI) -> dict[str, Connection]:
+    from tests.test_catalog import CATALOG, _connection, serve, service
+
+    app.state.services.catalog = service(app.state.settings.data_dir, serve())
+    await app.state.services.catalog.refresh()
+    del CATALOG  # (the served catalog is the shared test fixture)
+    return {
+        "claude": await _connection(app, "Claude", "anthropic", ["claude-opus-5-5"]),
+        "openai": await _connection(app, "OpenAI", "openai", ["gpt-5"]),
+        "google": await _connection(app, "Gemini", "google", ["gemini-3.5-pro"]),
+    }
+
+
+async def test_auto_assign_previews_saves_and_never_overwrites_your_choices(
+    app: FastAPI, client: httpx.AsyncClient
+) -> None:
+    connections = await _auto_world(app)
+
+    preview = (await client.post("/api/assignments/auto", json={"dry_run": True})).json()
+    assert preview["preset"] == "balanced"
+    assert {p["outcome"] for p in preview["proposals"]} == {"would_save"}
+    assert (await client.get("/api/assignments")).json() == []  # a preview saves nothing
+
+    saved = (await client.post("/api/assignments/auto", json={})).json()
+    assert {p["outcome"] for p in saved["proposals"]} == {"saved"} and len(saved["proposals"]) == 10
+    stored = {a["persona_id"]: a for a in (await client.get("/api/assignments")).json()}
+    assert len(stored) == 10 and {a["set_by"] for a in stored.values()} == {"auto"}
+    pm = stored["pm"]
+    assert pm["primary"]["model"] == "gpt-5"  # ties on tier; cheaper wins
+    assert "$1.25 in / $10 out per Mtok" in pm["reason"] and pm["reason"].startswith("strongest")
+    assert stored["backend"]["reason"].startswith("cheapest model meeting coding ≥4, tool use ≥4")
+
+    # You set one yourself; Auto leaves it alone unless you say otherwise.
+    manual = {
+        "primary": {"connection_id": str(connections["claude"].id), "model": "claude-opus-5-5"}
+    }
+    assert (await client.put("/api/assignments/designer", json=manual)).status_code == 200
+    again = {
+        p["persona_id"]: p
+        for p in (await client.post("/api/assignments/auto", json={})).json()["proposals"]
+    }
+    assert again["designer"]["outcome"] == "kept_manual" and again["pm"]["outcome"] == "saved"
+    kept = {a["persona_id"]: a for a in (await client.get("/api/assignments")).json()}
+    assert (
+        kept["designer"]["set_by"] == "user"
+        and kept["designer"]["primary"]["model"] == "claude-opus-5-5"
+    )
+    forced = (await client.post("/api/assignments/auto", json={"overwrite_manual": True})).json()
+    assert {p["persona_id"]: p["outcome"] for p in forced["proposals"]}["designer"] == "saved"
+    assert {a["set_by"] for a in (await client.get("/api/assignments")).json()} == {"auto"}
+
+
+async def test_an_unusable_preset_clears_stale_automatic_choices_but_keeps_manual_ones(
+    app: FastAPI, client: httpx.AsyncClient
+) -> None:
+    connections = await _auto_world(app)
+    await client.post("/api/assignments/auto", json={})
+    manual = {"primary": {"connection_id": str(connections["openai"].id), "model": "gpt-5"}}
+    await client.put("/api/assignments/backend", json=manual)
+
+    private = (await client.post("/api/assignments/auto", json={"preset": "private"})).json()
+
+    outcomes = {p["persona_id"]: p["outcome"] for p in private["proposals"]}
+    assert outcomes["backend"] == "kept_manual"
+    assert {o for pid, o in outcomes.items() if pid != "backend"} == {"none"}  # no local model
+    assert all(
+        "add a connection" in p["reason"] for p in private["proposals"] if p["outcome"] == "none"
+    )
+    left = (await client.get("/api/assignments")).json()
+    assert [a["persona_id"] for a in left] == ["backend"]  # only the one you chose remains
+    assert (await client.post("/api/assignments/auto", json={"preset": "nope"})).status_code == 422
+
+
+async def test_with_no_connections_every_persona_is_explained(client: httpx.AsyncClient) -> None:
+    result = (await client.post("/api/assignments/auto", json={})).json()
+
+    assert {p["outcome"] for p in result["proposals"]} == {"none"}
+    assert (await client.get("/api/assignments")).json() == []
+
+
+async def test_an_escalation_route_tries_the_stronger_model_first_then_the_normal_route(
+    app: FastAPI, client: httpx.AsyncClient, world: World
+) -> None:
+    from app.providers.assignments import route_for
+
+    openai = await world.connection("OpenAI", "openai", [("key 1", "a1")], OPENAI)
+    claude = await world.connection("Claude", "anthropic", [("key 1", "b1")], ANTHROPIC)
+    body = {
+        "primary": {"connection_id": str(openai.id), "model": "gpt-5-mini"},
+        "fallbacks": [{"connection_id": str(claude.id), "model": "claude-haiku-5-5"}],
+        "escalate": {"connection_id": str(claude.id), "model": "claude-opus-5-5"},
+    }
+    assert (await client.put("/api/assignments/backend", json=body)).status_code == 200
+    plain = {"primary": body["primary"]}
+    assert (await client.put("/api/assignments/frontend", json=plain)).status_code == 200
+
+    async with app.state.sessionmaker() as session:
+        normal = await route_for(session, "backend")
+        stronger = await route_for(session, "backend", escalate=True)
+        no_escalation = await route_for(session, "frontend", escalate=True)
+        plain_route = await route_for(session, "frontend")
+
+    assert [t.model for t in normal.targets] == ["gpt-5-mini", "claude-haiku-5-5"]
+    assert [t.model for t in stronger.targets] == [
+        "claude-opus-5-5",
+        "gpt-5-mini",
+        "claude-haiku-5-5",
+    ]
+    assert no_escalation == plain_route  # no escalation model: the normal route
+
+
+async def test_the_last_attempt_runs_on_the_escalation_model(
+    app: FastAPI, client: httpx.AsyncClient, world: World, workspace: Path
+) -> None:
+    from tests.test_persona_crew import REPORT, feature, run_persona, start
+
+    openai = await world.connection("OpenAI", "openai", [("key 1", "a1")], OPENAI)
+    await client.put(
+        "/api/assignments/backend",
+        json={
+            "primary": {"connection_id": str(openai.id), "model": "gpt-5-mini"},
+            "escalate": {"connection_id": str(openai.id), "model": "gpt-5"},
+        },
+    )
+    models: list[str] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        models.append(body["model"])
+        message = {"role": "assistant", "content": json.dumps(REPORT)}
+        return httpx.Response(200, json={"choices": [{"message": message}], "usage": {}})
+
+    world.provider.respond = respond
+    run_id, worktree = await start(app, workspace)
+
+    await run_persona(app, run_id, worktree, workspace, "backend", feature("backend"))
+    await run_persona(
+        app, run_id, worktree, workspace, "backend", feature("backend"), escalate=True
+    )
+
+    assert models == ["gpt-5-mini", "gpt-5"]  # the second call was the escalated attempt
+    calls = [c for c in await world.llm_calls() if c.run_id == run_id]
+    assert [c.model for c in calls] == ["gpt-5-mini", "gpt-5"]  # on record in llm_calls
