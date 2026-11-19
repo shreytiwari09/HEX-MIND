@@ -66,8 +66,10 @@ def feature_prompt(
     feedback: str | None = None,
     *,
     acceptance: bool = False,
+    repo_map: str = "",
 ) -> str:
-    """The task the agent works on: the feature spec, then what earlier features left for it."""
+    """The task the agent works on: the feature spec, then what earlier features left for it,
+    and a ranked map of the project (`repo_map`, may be empty)."""
     lines = [
         f"Work on this feature as the {persona.name}.",
         "",
@@ -88,6 +90,13 @@ def feature_prompt(
     if feature.target_files:
         lines += ["", f"Files you are expected to touch: {', '.join(feature.target_files)}"]
     lines += ["", "Work from earlier features:", *_handoff_lines(ctx.earlier_handoffs)]
+    if repo_map:
+        lines += [
+            "",
+            "Map of the project (most relevant files first, with the names they define; read a "
+            "file before you change it):",
+            repo_map,
+        ]
     if feedback:
         lines += ["", "Your previous attempt was not accepted. Fix this first:", feedback]
     if acceptance:

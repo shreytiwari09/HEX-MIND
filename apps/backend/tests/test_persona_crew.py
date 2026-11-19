@@ -150,6 +150,10 @@ async def test_a_worker_persona_changes_files_and_returns_a_valid_report(
     assert "Feature: Signup function" in prompt
     assert "users table has a unique email" in prompt  # earlier handoff, not chat history
     assert any_tool(first, "write_file") and any_tool(first, "run_check")
+    # The worker is shown a map of the project, the file it is expected to touch first.
+    assert "Map of the project" in prompt and "src/app.ts  (x)" in prompt
+    assert any_tool(first, "delete_file") and any_tool(first, "git_diff")
+    assert any_tool(first, "get_feature_context")
 
 
 async def test_a_validator_persona_is_read_only(app: FastAPI, workspace: Path) -> None:

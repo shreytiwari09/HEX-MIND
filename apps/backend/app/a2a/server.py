@@ -46,6 +46,7 @@ from app.agents.llm import HexLLM
 from app.agents.mcp_bridge import McpWorkspace
 from app.agents.persona import get_persona
 from app.agents.tools import CODER, READ_ONLY, make_tools, tool_summary
+from app.context.repo_map import build_repo_map
 from app.events.log import EventType
 from app.missions.models import AgentReport, MissionContext
 from app.orchestration.services import Services
@@ -243,12 +244,17 @@ class CrewExecutor(AgentExecutor):
                     ),
                     max_iter=settings.agent_max_iterations,
                 )
+                focus = [
+                    *request.feature.target_files,
+                    *(f for h in ctx.earlier_handoffs for f in h.files_changed),
+                ]
                 prompt = feature_prompt(
                     persona,
                     request.feature,
                     ctx,
                     request.feedback,
                     acceptance=request.mode == "acceptance",
+                    repo_map=await run_in_threadpool(build_repo_map, ctx.worktree, focus),
                 )
             else:
                 factory = roles.planner if self.role == "planner" else roles.coder

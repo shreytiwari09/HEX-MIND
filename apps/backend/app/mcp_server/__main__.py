@@ -52,6 +52,42 @@ def build_server(tools: WorkspaceTools) -> FastMCP:
         return guarded(tools.replace_in_file)(path, old, new)
 
     @server.tool()
+    def delete_file(path: str) -> str:
+        """Delete one file from the workspace."""
+        return guarded(tools.delete_file)(path)
+
+    @server.tool()
+    def move_file(source: str, destination: str) -> str:
+        """Move or rename a file; the destination must not exist."""
+        return guarded(tools.move_file)(source, destination)
+
+    @server.tool()
+    def git_status() -> str:
+        """Changed and new files since the last commit (read-only)."""
+        return guarded(tools.git_status)()
+
+    @server.tool()
+    def git_diff(path: str = "") -> str:
+        """Uncommitted changes to tracked files, optionally for one path (read-only)."""
+        return guarded(tools.git_diff)(path)
+
+    @server.tool()
+    def git_log(count: int = 10) -> str:
+        """The newest commits, one `sha subject` per line (read-only)."""
+        return guarded(tools.git_log)(count)
+
+    @server.tool()
+    def list_features() -> str:
+        """Every feature of the mission: id | milestone | persona | status | title."""
+        return guarded(tools.list_features)()
+
+    @server.tool()
+    def get_feature_context(feature_id: str = "") -> str:
+        """A feature's spec, its validation criteria and earlier handoffs (default: the
+        feature in progress)."""
+        return guarded(tools.get_feature_context)(feature_id)
+
+    @server.tool()
     def list_checks() -> str:
         """List the project's checks (name: command), as defined by its run contract."""
         return guarded(tools.list_checks)()

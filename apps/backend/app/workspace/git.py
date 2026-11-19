@@ -176,3 +176,25 @@ def show_file(root: Path, commit: str, path: str) -> str | None:
     """File contents at a commit, or None if it does not exist there."""
     result = _git(root, "show", f"{commit}:{path}", check=False)
     return result.stdout if result.returncode == 0 else None
+
+
+def status_lines(worktree: Path) -> list[str]:
+    """`git status --porcelain` for the worktree, without the mission's own `.hex/` files and
+    without installed dependencies."""
+    out = _git(worktree, *EXCLUDES, "status", "--porcelain", "--", ".", _NO_HEX).stdout
+    return [line for line in out.splitlines() if line.strip()]
+
+
+def working_diff(worktree: Path, path: str = "") -> str:
+    """Uncommitted changes to tracked files against HEAD (what this feature changed so far),
+    optionally for one path. New files are listed by `status_lines`, not shown here."""
+    spec = [path] if path else ["."]
+    return _git(worktree, *EXCLUDES, "diff", "HEAD", "--no-renames", "--", *spec, _NO_HEX).stdout
+
+
+def log_lines(worktree: Path, count: int) -> list[str]:
+    """The newest `count` commits as `<sha> <subject>`, no authors or dates."""
+    result = _git(worktree, "log", f"-n{count}", "--format=%h %s", check=False)
+    if result.returncode != 0 and "not a git repository" in result.stderr:
+        raise GitError(result.stderr.strip()[:300])
+    return result.stdout.splitlines()  # empty for a repository with no commits yet

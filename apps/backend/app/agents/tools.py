@@ -12,8 +12,17 @@ from app.agents.mcp_bridge import McpWorkspace
 
 MAX_TOOL_OUTPUT = 8000
 
-READ_ONLY = ("list_files", "read_file", "search_code")
-CODER = (*READ_ONLY, "write_file", "replace_in_file", "run_check")
+READ_ONLY = (
+    "list_files",
+    "read_file",
+    "search_code",
+    "git_status",
+    "git_diff",
+    "git_log",
+    "list_features",
+    "get_feature_context",
+)
+CODER = (*READ_ONLY, "write_file", "replace_in_file", "delete_file", "move_file", "run_check")
 
 ToolListener = Callable[[str, dict[str, Any], bool, str], None]
 
@@ -41,6 +50,23 @@ class _Replace(BaseModel):
     new: str = Field(description="Replacement text")
 
 
+class _Move(BaseModel):
+    source: str = Field(description="Existing workspace-relative file path")
+    destination: str = Field(description="New workspace-relative path; must not exist")
+
+
+class _Count(BaseModel):
+    count: int = Field(default=10, description="How many commits to list (1 to 50)")
+
+
+class _FeatureId(BaseModel):
+    feature_id: str = Field(default="", description="Feature id; empty for the one in progress")
+
+
+class _NoArgs(BaseModel):
+    pass
+
+
 class _Check(BaseModel):
     name: str = Field(description="Check name from the project profile, usually 'test'")
 
@@ -51,6 +77,16 @@ SPECS: dict[str, tuple[type[BaseModel], str]] = {
     "search_code": (_Query, "Search all workspace files; returns path:line: text matches."),
     "write_file": (_Write, "Create or overwrite a file with its complete new content."),
     "replace_in_file": (_Replace, "Replace one exact, unique snippet in a file."),
+    "delete_file": (_Path, "Delete one file."),
+    "move_file": (_Move, "Move or rename a file; the destination must not exist."),
+    "git_status": (_NoArgs, "Changed and new files since the last commit (read-only)."),
+    "git_diff": (_OptionalPath, "Uncommitted changes to tracked files, optionally for one path."),
+    "git_log": (_Count, "The newest commits, one 'sha subject' per line (read-only)."),
+    "list_features": (_NoArgs, "Every feature of the mission with its persona and status."),
+    "get_feature_context": (
+        _FeatureId,
+        "A feature's spec, validation criteria and earlier handoffs as JSON.",
+    ),
     "run_check": (_Check, "Run a project check such as 'test' in the sandbox; returns JSON."),
 }
 
