@@ -7,6 +7,7 @@ unavailable the check fails; it never falls back to running on the host.
 Blocking (subprocess) so it works under any event loop; call it from a thread pool.
 """
 
+import re
 import subprocess
 import time
 import uuid
@@ -109,3 +110,34 @@ def run_check(
 
 def _ms(started: float) -> int:
     return round((time.perf_counter() - started) * 1000)
+
+
+# Test runners that found nothing to run: node's TAP ("# tests 0") and spec ("ℹ tests 0")
+# reporters, Python's unittest ("Ran 0 tests").
+_NO_TESTS = re.compile(r"(?m)^(?:\S+\s+)?tests 0\s*$|\bRan 0 tests\b")
+
+
+def ran_no_tests(check: CheckOutcome) -> bool:
+    return bool(_NO_TESTS.search(check.output_tail))
+
+
+def accepted(check: CheckOutcome) -> bool:
+    """A check counts only if it passed *and* actually ran tests; exit 0 with no tests proves
+    nothing (`node --test` succeeds in an empty project)."""
+    return check.passed and not ran_no_tests(check)
+
+
+def check_summary(check: CheckOutcome | None) -> str:
+    if check is None:
+        return "not run"
+    if check.exit_code is None:
+        return f"{check.name}: did not complete ({check.error})"
+    if check.passed and ran_no_tests(check):
+        status = "exited 0 but ran NO tests (add *.test.js files using node:test)"
+    else:
+        status = "passed" if check.passed else f"FAILED (exit {check.exit_code})"
+    return f"{check.name}: {status}\n{check.output_tail[-1500:]}"
+
+
+def check_feedback(check: CheckOutcome) -> str:
+    return f"The `{check.name}` check is failing:\n{check_summary(check)}"

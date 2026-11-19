@@ -57,7 +57,9 @@ def build_agent(
     )
 
 
-def feature_prompt(persona: Persona, feature: Feature, ctx: MissionContext) -> str:
+def feature_prompt(
+    persona: Persona, feature: Feature, ctx: MissionContext, feedback: str | None = None
+) -> str:
     """The task the agent works on: the feature spec, then what earlier features left for it."""
     lines = [
         f"Work on this feature as the {persona.name}.",
@@ -79,6 +81,8 @@ def feature_prompt(persona: Persona, feature: Feature, ctx: MissionContext) -> s
     if feature.target_files:
         lines += ["", f"Files you are expected to touch: {', '.join(feature.target_files)}"]
     lines += ["", "Work from earlier features:", *_handoff_lines(ctx.earlier_handoffs)]
+    if feedback:
+        lines += ["", "Your previous attempt was not accepted. Fix this first:", feedback]
     if persona.kind == "worker":
         lines += [
             "",

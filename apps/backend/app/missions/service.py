@@ -1,0 +1,310 @@
+"""Mission creation and persistence (PRD §8, §9, §12.5).
+
+A mission is created from a hand-written plan (D24). Creating one takes a snapshot of the user's
+workspace, creates the mission branch and an isolated git worktree, stores the plan in Postgres
+and renders the mission folder in the worktree. The user's files are never touched.
+"""
+
+import uuid
+from decimal import Decimal
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from fastapi.concurrency import run_in_threadpool
+from sqlalchemy import func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import Settings
+from app.db.models import (
+    FeatureRow,
+    HandoffRow,
+    LLMCall,
+    Milestone,
+    Mission,
+    Need,
+    Project,
+    Run,
+)
+from app.events.log import EventType, append_event
+from app.missions import folder
+from app.missions.models import Handoff, MissionPlan
+from app.workspace import git
+
+if TYPE_CHECKING:
+    from app.orchestration.services import Services
+
+# Feature fields kept in `features.spec` (the rest have their own columns).
+SPEC_KEYS = (
+    "description",
+    "preconditions",
+    "expected_behavior",
+    "contract_refs",
+    "extra_skills",
+    "target_files",
+)
+
+
+class NotAGitRepo(RuntimeError):
+    """Missions need git: the worktree keeps changes isolated and revertible."""
+
+
+def worktree_path(settings: Settings, run_id: uuid.UUID) -> Path:
+    return settings.data_dir / "worktrees" / str(run_id)
+
+
+async def create_mission(
+    session: AsyncSession,
+    settings: Settings,
+    project: Project,
+    *,
+    idea: str,
+    plan: MissionPlan,
+    budget_usd: Decimal | None = None,
+) -> Mission:
+    root = Path(project.workspace_path)
+    if not await run_in_threadpool(git.is_repo, root):
+        raise NotAGitRepo(project.workspace_path)
+
+    mission_id = uuid.uuid4()
+    branch = f"hex/mission-{mission_id.hex[:12]}"
+    run = Run(project_id=project.id, title=plan.title, status="queued")
+    session.add(run)
+    await session.flush()
+    worktree = worktree_path(settings, run.id)
+    base = await run_in_threadpool(git.snapshot, root)
+    await run_in_threadpool(git.create_worktree, root, base, worktree, branch)
+    try:
+        run.base_commit = base
+        run.worktree_path = str(worktree)
+        mission = Mission(
+            id=mission_id,
+            project_id=project.id,
+            run_id=run.id,
+            title=plan.title,
+            idea=idea,
+            branch=branch,
+            budget_usd=budget_usd,
+        )
+        session.add(mission)
+        await session.flush()
+        position = 0
+        for milestone_position, milestone_plan in enumerate(plan.milestones):
+            milestone = Milestone(
+                mission_id=mission.id,
+                key=milestone_plan.id,
+                title=milestone_plan.title,
+                position=milestone_position,
+                validators=milestone_plan.validators,
+            )
+            session.add(milestone)
+            await session.flush()
+            for feature in milestone_plan.features:
+                session.add(
+                    FeatureRow(
+                        mission_id=mission.id,
+                        milestone_id=milestone.id,
+                        key=feature.id,
+                        title=feature.title,
+                        persona_id=feature.persona,
+                        position=position,
+                        spec=feature.model_dump(include=set(SPEC_KEYS)),
+                    )
+                )
+                position += 1
+        await session.flush()
+        await append_event(session, run.id, EventType.RUN_CREATED, payload={"title": plan.title})
+        await sync_mission_folder(session, mission, worktree)
+    except BaseException:
+        await run_in_threadpool(git.remove_worktree, root, worktree)
+        await run_in_threadpool(git.delete_branch, root, branch)
+        raise
+    return mission
+
+
+async def features_document(session: AsyncSession, mission: Mission) -> dict[str, Any]:
+    """`features.json` content (PRD §9.3), rendered from the database."""
+    milestones = list(
+        await session.scalars(
+            select(Milestone).where(Milestone.mission_id == mission.id).order_by(Milestone.position)
+        )
+    )
+    features = list(
+        await session.scalars(
+            select(FeatureRow)
+            .where(FeatureRow.mission_id == mission.id)
+            .order_by(FeatureRow.position)
+        )
+    )
+    rendered = []
+    for milestone in milestones:
+        rendered.append(
+            {
+                "id": milestone.key,
+                "title": milestone.title,
+                "status": milestone.status,
+                "validators": milestone.validators,
+                "features": [
+                    {
+                        "id": f.key,
+                        "title": f.title,
+                        "persona": f.persona_id,
+                        "status": f.status,
+                        **{k: f.spec.get(k, [] if k != "description" else "") for k in SPEC_KEYS},
+                        "attempts": f.attempts,
+                        "commit": f.commit,
+                    }
+                    for f in features
+                    if f.milestone_id == milestone.id
+                ],
+            }
+        )
+    return folder.render_features_json(str(mission.id), rendered)
+
+
+async def sync_mission_folder(session: AsyncSession, mission: Mission, worktree: Path) -> None:
+    document = await features_document(session, mission)
+    await run_in_threadpool(folder.write_features_json, worktree, document)
+
+
+async def record_handoff(
+    session: AsyncSession,
+    mission: Mission,
+    feature: FeatureRow,
+    handoff: Handoff,
+    worktree: Path,
+) -> HandoffRow:
+    """Store a handoff in both places (PRD §9.1): the database row and the `handoffs.jsonl` line."""
+    if (handoff.feature_id, handoff.persona_id) != (feature.key, feature.persona_id):
+        raise ValueError("the handoff is for a different feature or persona")
+    row = HandoffRow(
+        mission_id=mission.id,
+        feature_id=feature.id,
+        persona_id=handoff.persona_id,
+        attempt=feature.attempts,
+        data=handoff.model_dump(mode="json"),
+    )
+    session.add(row)
+    await session.flush()
+    await run_in_threadpool(folder.append_handoff, worktree, handoff)
+    return row
+
+
+# ---------- lifecycle and Needs you (PRD §8.1, §8.6, §8.7) ----------
+
+
+class InvalidTransition(RuntimeError):
+    pass
+
+
+NEED_ACTIONS: dict[str, tuple[str, ...]] = {
+    "feature_failed": ("retry", "skip", "stop"),
+    "provider_unavailable": ("retry", "stop"),
+    "budget_reached": ("raise_budget", "stop"),
+}
+OPEN_STATES = ("awaiting_approval", "running", "paused", "needs_user")
+
+
+async def set_status(
+    session: AsyncSession, mission_id: uuid.UUID, to: str, *, only_from: tuple[str, ...]
+) -> bool:
+    """Move a mission to `to` only if it is currently in one of `only_from`. The runner and the
+    API both use this, so a pause or stop is never overwritten by a runner that is finishing."""
+    values: dict[str, Any] = {"status": to}
+    if to in ("completed", "cancelled", "failed"):
+        values["finished_at"] = func.clock_timestamp()
+    result = await session.execute(
+        update(Mission)
+        .where(Mission.id == mission_id, Mission.status.in_(only_from))
+        .values(**values)
+        .returning(Mission.id)
+    )
+    return result.first() is not None
+
+
+async def create_need(
+    session: AsyncSession,
+    mission: Mission,
+    *,
+    kind: str,
+    summary: str,
+    feature: FeatureRow | None = None,
+    evidence: dict[str, Any] | None = None,
+) -> Need:
+    need = Need(
+        mission_id=mission.id,
+        feature_id=feature.id if feature else None,
+        kind=kind,
+        summary=summary,
+        evidence=evidence or {},
+        options=list(NEED_ACTIONS[kind]),
+    )
+    session.add(need)
+    await session.flush()
+    return need
+
+
+async def spent_usd(session: AsyncSession, run_id: uuid.UUID) -> Decimal:
+    total = await session.scalar(
+        select(func.coalesce(func.sum(LLMCall.est_cost_usd), 0)).where(LLMCall.run_id == run_id)
+    )
+    return Decimal(total or 0)
+
+
+async def settle_cancelled(services: "Services", mission_id: uuid.UUID) -> None:
+    """Close the mission's run after a stop (idempotent)."""
+    async with services.sessionmaker.begin() as session:
+        mission = await session.get(Mission, mission_id)
+        run = await session.get(Run, mission.run_id) if mission else None
+        if mission is None or run is None or mission.status != "cancelled":
+            return
+        if run.status == "cancelled":
+            return
+        previous, run.status, run.finished_at = run.status, "cancelled", func.clock_timestamp()
+        await append_event(
+            session,
+            run.id,
+            EventType.RUN_STATUS_CHANGED,
+            payload={"status": "cancelled", "previous": previous, "stub": False},
+        )
+        await append_event(
+            session, run.id, EventType.RUN_CANCELLED, payload={"reason": "stopped by the user"}
+        )
+
+
+async def answer_need(
+    session: AsyncSession,
+    need: Need,
+    *,
+    action: str,
+    budget_usd: Decimal | None = None,
+) -> str:
+    """Apply the user's answer; returns the mission status afterwards. The caller restarts the
+    runner when the mission is `running`."""
+    if need.status != "open":
+        raise InvalidTransition("this item was already answered")
+    if action not in NEED_ACTIONS[need.kind]:
+        raise InvalidTransition(f"{action!r} is not an option for {need.kind}")
+    mission = await session.get(Mission, need.mission_id)
+    assert mission is not None
+    feature = await session.get(FeatureRow, need.feature_id) if need.feature_id else None
+
+    if action == "stop":
+        target = "cancelled"
+    else:
+        target = "running"
+        if action == "retry" and feature is not None and need.kind == "feature_failed":
+            feature.status, feature.attempts = "pending", 0
+        elif action == "skip" and feature is not None:
+            feature.status = "skipped"
+        elif action == "raise_budget":
+            spent = await spent_usd(session, mission.run_id)
+            if budget_usd is None or budget_usd <= spent:
+                raise InvalidTransition(f"the new budget must be above the {spent} USD spent")
+            mission.budget_usd = budget_usd
+    if not await set_status(session, mission.id, target, only_from=("needs_user",)):
+        raise InvalidTransition("the mission is not waiting for you")
+    need.status = "answered"
+    need.answer = {"action": action, "budget_usd": float(budget_usd) if budget_usd else None}
+    need.answered_at = func.clock_timestamp()
+    await session.flush()
+    return target

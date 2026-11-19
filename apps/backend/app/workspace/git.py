@@ -91,6 +91,28 @@ def remove_worktree(root: Path, path: Path) -> None:
     _git(root, "worktree", "prune", check=False)
 
 
+def commit_all(worktree: Path, message: str) -> str:
+    """Commit everything in the worktree (a checkpoint) and return the new commit."""
+    _git(worktree, "add", "-A")
+    _git(worktree, *AUTHOR, "commit", "-q", "--allow-empty", "-m", message)
+    return head(worktree)
+
+
+def is_dirty(worktree: Path) -> bool:
+    return bool(_git(worktree, "status", "--porcelain").stdout.strip())
+
+
+def reset_to(worktree: Path, commit: str) -> None:
+    """Discard every uncommitted change and untracked file, back to `commit`."""
+    _git(worktree, "reset", "-q", "--hard", commit)
+    _git(worktree, "clean", "-fdq")
+
+
+def delete_branch(root: Path, branch: str) -> None:
+    """Delete a branch (its worktree must already be removed)."""
+    _git(root, "branch", "-D", branch, check=False)
+
+
 @dataclass(frozen=True)
 class FileDiff:
     path: str

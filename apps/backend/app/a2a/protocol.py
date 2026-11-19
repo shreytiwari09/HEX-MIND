@@ -50,6 +50,8 @@ class PersonaRequest(CrewRequest):
     persona_id: str
     feature: Feature
     earlier_handoffs: list[Handoff] = Field(default_factory=list)
+    # The exact findings of a rejected attempt, for the retry (PRD §8.6).
+    feedback: str | None = None
     expected_output: str = REPORT_EXPECTED
 
 

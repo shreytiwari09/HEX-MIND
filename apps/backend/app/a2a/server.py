@@ -218,7 +218,7 @@ class CrewExecutor(AgentExecutor):
                     tools=make_tools(mcp, tool_names_for(persona), listener),
                     max_iter=settings.agent_max_iterations,
                 )
-                prompt = feature_prompt(persona, request.feature, ctx)
+                prompt = feature_prompt(persona, request.feature, ctx, request.feedback)
             else:
                 factory = roles.planner if self.role == "planner" else roles.coder
                 names = READ_ONLY if self.role == "planner" else CODER

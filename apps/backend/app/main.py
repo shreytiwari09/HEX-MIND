@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.a2a.client import CrewServiceProcess, a2a_http_client
-from app.api import a2a, conversations, health, projects, providers, runs, tasks
+from app.api import a2a, conversations, health, missions, projects, providers, runs, tasks
 from app.auth import require_token
 from app.chat.service import ChatService
 from app.config import Settings, get_settings
@@ -69,6 +69,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["Authorization", "Content-Type"],
     )
 
-    for module in (health, projects, runs, providers, conversations, tasks, a2a):
+    for module in (health, projects, runs, providers, conversations, tasks, a2a, missions):
         app.include_router(module.router, prefix="/api", dependencies=[Depends(require_token)])
+    app.include_router(missions.needs_router, prefix="/api", dependencies=[Depends(require_token)])
     return app

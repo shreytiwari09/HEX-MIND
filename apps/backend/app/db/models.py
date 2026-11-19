@@ -298,3 +298,100 @@ class RoutingLabel(Base):
     label_type: Mapped[str] = mapped_column(String(16))
     labeler: Mapped[str] = mapped_column(String(64))
     split: Mapped[str] = mapped_column(String(8))  # train | test
+
+
+# ---------- Missions (PRD §12.5) ----------
+# A mission owns one `runs` row, so its events, llm_calls and telemetry reuse the per-run event
+# log. The mission folder in the worktree is a rendering of this state (PRD §9.1).
+
+
+class Mission(Base):
+    __tablename__ = "missions"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    project_id: Mapped[uuid.UUID] = _fk("projects.id")
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("runs.id", ondelete="CASCADE"), unique=True
+    )
+    title: Mapped[str] = mapped_column(String(255))
+    idea: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="awaiting_approval", index=True)
+    branch: Mapped[str] = mapped_column(String(128))  # hex/mission-<id>
+    budget_usd: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Milestone(Base):
+    __tablename__ = "milestones"
+    __table_args__ = (UniqueConstraint("mission_id", "key"),)
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    mission_id: Mapped[uuid.UUID] = _fk("missions.id")
+    key: Mapped[str] = mapped_column(String(64))  # the plan's id, e.g. "m2-backend"
+    title: Mapped[str] = mapped_column(String(255))
+    position: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    validators: Mapped[list[str]] = mapped_column(default=list)
+
+
+class FeatureRow(Base):
+    __tablename__ = "features"
+    __table_args__ = (UniqueConstraint("mission_id", "key"),)
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    mission_id: Mapped[uuid.UUID] = _fk("missions.id")
+    milestone_id: Mapped[uuid.UUID] = _fk("milestones.id")
+    key: Mapped[str] = mapped_column(String(64))  # the plan's feature id
+    title: Mapped[str] = mapped_column(String(255))
+    persona_id: Mapped[str] = mapped_column(String(32))
+    position: Mapped[int] = mapped_column(Integer)  # execution order within the mission
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    commit: Mapped[str | None] = mapped_column(String(64))
+    # description, preconditions, expected_behavior, contract_refs, extra_skills, target_files
+    spec: Mapped[dict[str, Any]] = mapped_column(default=dict)
+
+
+class HandoffRow(Base):
+    __tablename__ = "handoffs"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    mission_id: Mapped[uuid.UUID] = _fk("missions.id")
+    feature_id: Mapped[uuid.UUID] = _fk("features.id")
+    persona_id: Mapped[str] = mapped_column(String(32))
+    attempt: Mapped[int] = mapped_column(Integer)
+    data: Mapped[dict[str, Any]] = mapped_column()  # the Handoff, as validated JSON
+    created_at: Mapped[datetime] = _created_at()
+
+
+class Checkpoint(Base):
+    __tablename__ = "checkpoints"
+    __table_args__ = (UniqueConstraint("mission_id", "commit"),)
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    mission_id: Mapped[uuid.UUID] = _fk("missions.id")
+    feature_id: Mapped[uuid.UUID | None] = _fk("features.id", nullable=True, ondelete="SET NULL")
+    commit: Mapped[str] = mapped_column(String(64))
+    label: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = _created_at()
+
+
+class Need(Base):
+    """Something the mission cannot continue without: a "Needs you" item (PRD §8.6)."""
+
+    __tablename__ = "needs"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    mission_id: Mapped[uuid.UUID] = _fk("missions.id")
+    feature_id: Mapped[uuid.UUID | None] = _fk("features.id", nullable=True, ondelete="SET NULL")
+    kind: Mapped[str] = mapped_column(String(32))  # e.g. feature_failed, budget_reached
+    summary: Mapped[str] = mapped_column(Text)
+    evidence: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    options: Mapped[list[Any]] = mapped_column(default=list)
+    status: Mapped[str] = mapped_column(String(16), default="open")  # open | answered
+    answer: Mapped[dict[str, Any] | None] = mapped_column()
+    created_at: Mapped[datetime] = _created_at()
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

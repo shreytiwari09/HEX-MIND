@@ -18,7 +18,6 @@ results from the sandbox.
 import asyncio
 import json
 import logging
-import re
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass, field
@@ -52,7 +51,13 @@ from app.orchestration.adk import (
 )
 from app.orchestration.services import Services
 from app.providers.router import CallContext
-from app.sandbox.runner import CheckOutcome
+from app.sandbox.runner import (
+    CheckOutcome,
+    accepted,
+    check_feedback,
+    check_summary,
+    ran_no_tests,
+)
 from app.telemetry.hub import TelemetryHub
 from app.workspace import git
 from app.workspace.files import content_hash
@@ -876,32 +881,7 @@ NO_CHANGES_FEEDBACK = (
     "run the `test` check."
 )
 
-# Test runners that found nothing to run: node's TAP ("# tests 0") and spec ("ℹ tests 0")
-# reporters, Python's unittest ("Ran 0 tests").
-_NO_TESTS = re.compile(r"(?m)^(?:\S+\s+)?tests 0\s*$|\bRan 0 tests\b")
-
-
-def _ran_no_tests(check: CheckOutcome) -> bool:
-    return bool(_NO_TESTS.search(check.output_tail))
-
-
-def _accepted(check: CheckOutcome) -> bool:
-    """A check counts only if it passed *and* actually ran tests; exit 0 with no tests proves
-    nothing (`node --test` succeeds in an empty project)."""
-    return check.passed and not _ran_no_tests(check)
-
-
-def _check_summary(check: CheckOutcome | None) -> str:
-    if check is None:
-        return "not run"
-    if check.exit_code is None:
-        return f"{check.name}: did not complete ({check.error})"
-    if check.passed and _ran_no_tests(check):
-        status = "exited 0 but ran NO tests (add *.test.js files using node:test)"
-    else:
-        status = "passed" if check.passed else f"FAILED (exit {check.exit_code})"
-    return f"{check.name}: {status}\n{check.output_tail[-1500:]}"
-
-
-def _check_feedback(check: CheckOutcome) -> str:
-    return f"The `{check.name}` check is failing:\n{_check_summary(check)}"
+_ran_no_tests = ran_no_tests
+_accepted = accepted
+_check_summary = check_summary
+_check_feedback = check_feedback
