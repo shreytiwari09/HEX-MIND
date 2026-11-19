@@ -67,6 +67,15 @@ class AgentReport(BaseModel):
     notes_for_next: list[str] = Field(default_factory=list)
 
 
+class SkillUse(BaseModel):
+    """A skill the agent was offered for a feature, and whether it loaded it (measured from the
+    tool-call log, not from the agent's report)."""
+
+    name: str
+    version: str  # name@<first 12 hex of the skill's hash>
+    loaded: bool = False
+
+
 class Handoff(AgentReport):
     feature_id: str
     persona_id: str
@@ -76,6 +85,7 @@ class Handoff(AgentReport):
     tokens_in: int = 0
     tokens_out: int = 0
     cost_usd: float = 0.0
+    skills: list[SkillUse] = Field(default_factory=list)
 
     @classmethod
     def assemble(
@@ -89,6 +99,7 @@ class Handoff(AgentReport):
         tokens_in: int,
         tokens_out: int,
         cost_usd: float,
+        skills: list[SkillUse] | None = None,
     ) -> "Handoff":
         """Combine the agent's report with measured facts. The agent's own claims about files
         or commands are not part of `AgentReport`, so they cannot leak into the measured fields."""
@@ -102,6 +113,7 @@ class Handoff(AgentReport):
             tokens_in=tokens_in,
             tokens_out=tokens_out,
             cost_usd=cost_usd,
+            skills=skills or [],
         )
 
 

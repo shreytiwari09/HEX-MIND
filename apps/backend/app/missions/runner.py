@@ -36,7 +36,9 @@ from sqlalchemy import func, select
 from app.a2a.client import CrewCallFailed, call_crew
 from app.a2a.protocol import PersonaRequest
 from app.agents.mcp_bridge import McpWorkspace
+from app.agents.persona import UnknownPersona, get_persona
 from app.db.models import (
+    AgentEvent,
     CheckResult,
     Connection,
     FeatureRow,
@@ -57,6 +59,7 @@ from app.missions.models import (
     Feature,
     Finding,
     Handoff,
+    SkillUse,
     ValidatorReport,
 )
 from app.missions.validators import VALIDATORS, FeatureSnap, ValidationContext
@@ -67,6 +70,7 @@ from app.providers.assignments import has_escalation, route_for
 from app.sandbox.contract import ContractError
 from app.sandbox.profile import ProfileError, load_profile
 from app.sandbox.runner import CheckOutcome, accepted, check_feedback
+from app.skills.registry import SkillRegistry
 from app.telemetry.hub import TelemetryHub
 from app.workspace import git
 
@@ -390,9 +394,39 @@ class MissionRunner:
             tokens_in=tokens_in,
             tokens_out=tokens_out,
             cost_usd=float(cost),
+            skills=await self._skills_used(feature, request.agent_id, started),
         )
         await self._checkpoint(key, handoff)
         return Attempt("accepted")
+
+    async def _skills_used(self, feature: Feature, agent_id: str, since: object) -> list[SkillUse]:
+        """The skills the persona was offered for this feature (name and version) and which of
+        them it actually loaded, read from the tool-call log."""
+        try:
+            persona = get_persona(feature.persona)
+        except UnknownPersona:
+            return []
+        registry = SkillRegistry(self.services.settings.data_dir / "skills")
+        offered, _ = await run_in_threadpool(
+            registry.resolve, [*persona.skills, *feature.extra_skills]
+        )
+        async with self.services.sessionmaker() as session:
+            payloads = list(
+                await session.scalars(
+                    select(AgentEvent.payload).where(
+                        AgentEvent.run_id == self.run_id,
+                        AgentEvent.type == EventType.TOOL_CALLED,
+                        AgentEvent.agent_id == agent_id,
+                        AgentEvent.ts >= since,
+                    )
+                )
+            )
+        loaded = {
+            str(p.get("summary", "")).partition(":")[0]
+            for p in payloads
+            if p.get("tool") == "load_skill" and p.get("ok")
+        }
+        return [SkillUse(name=s.name, version=s.version, loaded=s.name in loaded) for s in offered]
 
     async def _note_escalation(self, feature: Feature, attempt: int) -> None:
         """Record in the delegation log that this attempt runs on the escalation model."""

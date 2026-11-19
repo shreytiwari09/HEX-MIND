@@ -44,7 +44,7 @@ from app.agents import roles
 from app.agents.build import build_agent, feature_prompt, tool_names_for
 from app.agents.llm import HexLLM
 from app.agents.mcp_bridge import McpWorkspace
-from app.agents.persona import get_persona
+from app.agents.persona import UnknownPersona, get_persona
 from app.agents.tools import CODER, READ_ONLY, make_tools, tool_summary
 from app.context.repo_map import build_repo_map
 from app.events.log import EventType
@@ -53,6 +53,7 @@ from app.orchestration.services import Services
 from app.providers.assignments import route_for
 from app.providers.router import CallContext
 from app.sandbox.contract import CONTRACT_PATH, DOCKERFILE_PATH
+from app.skills.registry import Skill, SkillRegistry
 from app.telemetry.hub import TelemetryHub
 from app.workspace.paths import ACCEPTANCE_DIR
 
@@ -179,6 +180,8 @@ class CrewExecutor(AgentExecutor):
     async def _run_crew(self, request: CrewRequest, prompt: str, hub: TelemetryHub) -> str:
         settings = self.services.settings
         worktree = _checked_worktree(Path(request.worktree), settings.data_dir)
+        registry = SkillRegistry(settings.data_dir / "skills")
+        offered = _offered_skills(registry, request)
         mcp = McpWorkspace(
             root=worktree,
             workspace=Path(request.workspace),
@@ -186,6 +189,8 @@ class CrewExecutor(AgentExecutor):
             check_timeout_s=settings.sandbox_timeout_s,
             writable=_writable_for(request),
             write_only=_write_only_for(request),
+            skills=tuple(s.name for s in offered),
+            skills_dir=registry.user_dir,
         )
         await run_in_threadpool(mcp.start)
         try:
@@ -254,6 +259,7 @@ class CrewExecutor(AgentExecutor):
                     ctx,
                     request.feedback,
                     acceptance=request.mode == "acceptance",
+                    skills=offered,
                     repo_map=await run_in_threadpool(build_repo_map, ctx.worktree, focus),
                 )
             else:
@@ -292,6 +298,19 @@ def _write_only_for(request: CrewRequest) -> tuple[str, ...]:
     if isinstance(request, PersonaRequest) and request.mode == "acceptance":
         return (ACCEPTANCE_DIR,)
     return ()
+
+
+def _offered_skills(registry: SkillRegistry, request: CrewRequest) -> list[Skill]:
+    """The skills a persona is offered for this feature: its own plus the feature's extras,
+    keeping only those that exist and are valid."""
+    if not isinstance(request, PersonaRequest):
+        return []
+    try:
+        persona = get_persona(request.persona_id)
+    except UnknownPersona:
+        return []  # the job fails with a clear error further on
+    found, _ = registry.resolve([*persona.skills, *request.feature.extra_skills])
+    return found
 
 
 def _crew_purpose(role: CrewRole) -> Literal["planner", "coder"]:

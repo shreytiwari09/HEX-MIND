@@ -10,6 +10,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from app.mcp_server.tools import ToolError, WorkspaceTools
+from app.skills.registry import SkillRegistry
 
 
 def build_server(tools: WorkspaceTools) -> FastMCP:
@@ -88,6 +89,11 @@ def build_server(tools: WorkspaceTools) -> FastMCP:
         return guarded(tools.get_feature_context)(feature_id)
 
     @server.tool()
+    def load_skill(name: str, file: str = "") -> str:
+        """The full instructions of one of your skills (or one of its files)."""
+        return guarded(tools.load_skill)(name, file)
+
+    @server.tool()
     def list_checks() -> str:
         """List the project's checks (name: command), as defined by its run contract."""
         return guarded(tools.list_checks)()
@@ -108,6 +114,8 @@ def main() -> None:
     parser.add_argument("--check-timeout", type=int, default=120)
     parser.add_argument("--writable", default="", help="exact extra paths agents may write")
     parser.add_argument("--write-only", default="", help="confine writes to these folders")
+    parser.add_argument("--skills", default="", help="names of the skills the agent may load")
+    parser.add_argument("--skills-dir", default="", help="the user's skills folder")
     args = parser.parse_args()
     tools = WorkspaceTools(
         args.root,
@@ -116,6 +124,8 @@ def main() -> None:
         check_timeout_s=args.check_timeout,
         writable_extra=frozenset(p for p in args.writable.split(",") if p),
         write_only=tuple(p for p in args.write_only.split(",") if p),
+        skills=SkillRegistry(Path(args.skills_dir) if args.skills_dir else None),
+        allowed_skills=tuple(s for s in args.skills.split(",") if s),
     )
     build_server(tools).run("stdio")
 

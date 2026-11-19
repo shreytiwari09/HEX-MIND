@@ -18,6 +18,7 @@ from app.agents.llm import HexLLM
 from app.agents.persona import Persona
 from app.agents.tools import CODER, READ_ONLY
 from app.missions.models import AgentReport, Feature, Handoff, MissionContext
+from app.skills.registry import Skill, skill_index
 
 # Earlier handoffs shown to a worker: the most recent ones, to keep its context small.
 MAX_HANDOFFS_SHOWN = 8
@@ -67,9 +68,11 @@ def feature_prompt(
     *,
     acceptance: bool = False,
     repo_map: str = "",
+    skills: list[Skill] | None = None,
 ) -> str:
     """The task the agent works on: the feature spec, then what earlier features left for it,
-    and a ranked map of the project (`repo_map`, may be empty)."""
+    a ranked map of the project (`repo_map`, may be empty) and the index of the skills the agent
+    may load (one line each; the full text comes from `load_skill`)."""
     lines = [
         f"Work on this feature as the {persona.name}.",
         "",
@@ -90,6 +93,12 @@ def feature_prompt(
     if feature.target_files:
         lines += ["", f"Files you are expected to touch: {', '.join(feature.target_files)}"]
     lines += ["", "Work from earlier features:", *_handoff_lines(ctx.earlier_handoffs)]
+    if skills:
+        lines += [
+            "",
+            "Skills you can load with load_skill(name) when one applies (do not load them all):",
+            skill_index(skills),
+        ]
     if repo_map:
         lines += [
             "",

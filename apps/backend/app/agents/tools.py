@@ -21,6 +21,7 @@ READ_ONLY = (
     "git_log",
     "list_features",
     "get_feature_context",
+    "load_skill",
 )
 CODER = (*READ_ONLY, "write_file", "replace_in_file", "delete_file", "move_file", "run_check")
 
@@ -63,6 +64,11 @@ class _FeatureId(BaseModel):
     feature_id: str = Field(default="", description="Feature id; empty for the one in progress")
 
 
+class _LoadSkill(BaseModel):
+    name: str = Field(description="The skill's name, from your skill list")
+    file: str = Field(default="", description="Optional: one of the skill's files")
+
+
 class _NoArgs(BaseModel):
     pass
 
@@ -87,6 +93,7 @@ SPECS: dict[str, tuple[type[BaseModel], str]] = {
         _FeatureId,
         "A feature's spec, validation criteria and earlier handoffs as JSON.",
     ),
+    "load_skill": (_LoadSkill, "Load the full instructions of one of your skills."),
     "run_check": (_Check, "Run a project check such as 'test' in the sandbox; returns JSON."),
 }
 

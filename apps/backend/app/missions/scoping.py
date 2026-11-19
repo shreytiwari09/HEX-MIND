@@ -36,6 +36,7 @@ from app.orchestration.services import Services
 from app.providers.assignments import route_for
 from app.providers.router import CallContext
 from app.sandbox.contract import CONTRACT_PATH
+from app.skills.registry import SkillRegistry
 from app.telemetry.hub import TelemetryHub
 
 PM = "pm"
@@ -181,7 +182,20 @@ EXAMPLE = {
 }
 
 
-def pm_prompt(idea: str, context: str, messages: list[dict[str, Any]], must_plan: bool) -> str:
+def pm_skills(registry: SkillRegistry) -> str:
+    """The PM's own skills, in full: scoping has no tools to load them with, and they hold the
+    strategy (how to interview, write the PRD, decompose features; PRD §11.5)."""
+    found, _ = registry.resolve(get_persona(PM).skills)
+    return "\n\n".join(f"## Skill: {s.name}\n{s.body}" for s in found)
+
+
+def pm_prompt(
+    idea: str,
+    context: str,
+    messages: list[dict[str, Any]],
+    must_plan: bool,
+    skills: str = "",
+) -> str:
     persona = get_persona(PM)
     transcript = "\n\n".join(
         f"{'User' if m['role'] == 'user' else 'PM'}: {m['content']}"
@@ -201,6 +215,8 @@ def pm_prompt(idea: str, context: str, messages: list[dict[str, Any]], must_plan
         "if the user asks you to go ahead, propose the plan."
     )
     return f"""{persona.instructions.strip()}
+
+{skills}
 
 You are scoping a new mission with the user. Their idea:
 {idea}
@@ -256,7 +272,10 @@ async def pm_turn(
         purpose="planner",
         max_tokens=8192,
     )
-    prompt = pm_prompt(idea, context, messages, must_plan)
+    registry = SkillRegistry(services.settings.data_dir / "skills")
+    prompt = pm_prompt(
+        idea, context, messages, must_plan, await run_in_threadpool(pm_skills, registry)
+    )
     agent = LlmAgent(
         name="pm_scoping",
         description="The PM scoping a new mission with the user.",

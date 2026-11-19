@@ -38,6 +38,8 @@ class McpWorkspace:
         call_timeout_s: float = 300,
         writable: tuple[str, ...] = (),
         write_only: tuple[str, ...] = (),
+        skills: tuple[str, ...] = (),
+        skills_dir: Path | None = None,
     ) -> None:
         self._params = StdioServerParameters(
             command=sys.executable,
@@ -49,6 +51,8 @@ class McpWorkspace:
                 "--check-timeout", str(check_timeout_s),
                 "--writable", ",".join(writable),
                 "--write-only", ",".join(write_only),
+                "--skills", ",".join(skills),
+                "--skills-dir", str(skills_dir) if skills_dir else "",
             ],
             cwd=str(BACKEND_DIR),
             env=_server_env(),

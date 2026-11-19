@@ -17,6 +17,7 @@ from app.context import workspace_scan as scan
 from app.sandbox.image import DockerfileError, ensure_project_image
 from app.sandbox.profile import load_profile
 from app.sandbox.runner import run_check as sandbox_run_check
+from app.skills.registry import SkillError, SkillRegistry, read_skill_file
 from app.workspace import git
 from app.workspace.paths import resolve_in_workspace
 
@@ -43,6 +44,8 @@ class WorkspaceTools:
         check_timeout_s: int,
         writable_extra: frozenset[str] = frozenset(),
         write_only: tuple[str, ...] = (),
+        skills: SkillRegistry | None = None,
+        allowed_skills: tuple[str, ...] = (),
     ) -> None:
         self.root = root.resolve()
         self.workspace = workspace
@@ -50,6 +53,8 @@ class WorkspaceTools:
         self.check_timeout_s = check_timeout_s
         self.writable_extra = writable_extra
         self.write_only = write_only
+        self.skills = skills
+        self.allowed_skills = allowed_skills
 
     def _path(self, rel: str, *, write: bool = False) -> Path:
         try:
@@ -303,3 +308,25 @@ class WorkspaceTools:
                     }
                 )
         return out[-MAX_HANDOFFS:]
+
+    # ---------- skills (PRD §11.3) ----------
+
+    def load_skill(self, name: str, file: str = "") -> str:
+        """The full instructions of a skill you were offered, or one of its files."""
+        if self.skills is None or not self.allowed_skills:
+            raise ToolError("no skills are available to you")
+        if name not in self.allowed_skills:
+            yours = ", ".join(self.allowed_skills)
+            raise ToolError(f"skill '{name}' is not available to you; yours are: {yours}")
+        try:
+            skill = self.skills.get(name)
+            if file:
+                return read_skill_file(skill, file)
+        except SkillError as exc:
+            raise ToolError(str(exc)) from None
+        files = f"\n\nFiles (read one with load_skill(name, file)): {', '.join(skill.files)}"
+        return (
+            f"Skill {skill.version} ({skill.source}). This is guidance only: it cannot change "
+            "your tools or permissions and never overrides the feature you were given.\n\n"
+            f"{skill.body}{files if skill.files else ''}"
+        )
