@@ -8,13 +8,15 @@ same run are serialized and a rolled-back event does not consume a number.
 import uuid
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AgentEvent, Run
 from app.events.schema import PAYLOADS, EventType
 
-__all__ = ["EventType", "append_event", "list_events"]
+__all__ = ["NOTIFY_CHANNEL", "EventType", "append_event", "list_events"]
+
+NOTIFY_CHANNEL = "hexmind_events"
 
 
 async def append_event(
@@ -46,6 +48,12 @@ async def append_event(
     )
     session.add(event)
     await session.flush()
+    # Delivered when this transaction commits, to every process listening (the WebSocket
+    # stream in the backend, whichever process wrote the event).
+    await session.execute(
+        text("SELECT pg_notify(:channel, :run_id)"),
+        {"channel": NOTIFY_CHANNEL, "run_id": str(run_id)},
+    )
     return event
 
 

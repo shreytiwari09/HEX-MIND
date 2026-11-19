@@ -7,7 +7,9 @@ types are built from.
 Versions: v1 froze at the end of M3. v2 (P1) adds the monitoring events fed by ADK and CrewAI
 callbacks through the TelemetryHub (agent_started, agent_finished, callback_fired,
 schema_validated) and reserves guardrail_triggered, a2a_message and prompt_variant_selected for
-P2/P4. v3 (P2) gives a2a_message the fields both ends of an A2A exchange record. Any change
+P2/P4. v3 (P2) gives a2a_message the fields both ends of an A2A exchange record. v4 (P3) adds
+the mission events (mission, milestone and feature status, handoffs, checkpoints, Needs you)
+that the Mission Control stream carries. Any change
 needs agreement from all owners and bumps SCHEMA_VERSION.
 
 Payloads carry `stub: true` when the work they describe was not really performed (M2 worker
@@ -19,7 +21,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 Complexity = Literal["low", "medium", "high"]
 Framework = Literal["adk", "crewai"]
@@ -55,6 +57,14 @@ class EventType(StrEnum):
     GUARDRAIL_TRIGGERED = "guardrail_triggered"
     A2A_MESSAGE = "a2a_message"
     PROMPT_VARIANT_SELECTED = "prompt_variant_selected"
+    # v4: missions (P3). The mission's run owns the event log, so these share its `seq`.
+    MISSION_STATUS_CHANGED = "mission_status_changed"
+    MILESTONE_STATUS_CHANGED = "milestone_status_changed"
+    FEATURE_STATUS_CHANGED = "feature_status_changed"
+    HANDOFF_RECORDED = "handoff_recorded"
+    CHECKPOINT_CREATED = "checkpoint_created"
+    NEED_RAISED = "need_raised"
+    NEED_ANSWERED = "need_answered"
 
 
 class Payload(BaseModel):
@@ -234,6 +244,56 @@ class PromptVariantSelected(Payload):
     variant: str
 
 
+class MissionStatusChanged(Payload):
+    status: str
+    previous: str | None = None
+    reason: str | None = None  # e.g. "applied", "stopped by the user"
+
+
+class MilestoneStatusChanged(Payload):
+    milestone_id: str  # the plan's milestone id
+    title: str
+    status: str
+
+
+class FeatureStatusChanged(Payload):
+    feature_id: str  # the plan's feature id
+    title: str
+    persona: str
+    status: str
+    attempts: int
+    commit: str | None = None
+
+
+class HandoffRecorded(Payload):
+    feature_id: str
+    persona: str
+    model_used: str
+    files_changed: list[str]
+    tokens_in: int
+    tokens_out: int
+    cost_usd: float
+
+
+class CheckpointCreated(Payload):
+    commit: str
+    label: str
+    feature_id: str | None = None
+
+
+class NeedRaised(Payload):
+    need_id: str
+    kind: str
+    summary: str
+    options: list[str]
+    feature_id: str | None = None
+
+
+class NeedAnswered(Payload):
+    need_id: str
+    action: str
+
+
 PAYLOADS: dict[EventType, type[Payload]] = {
     EventType.RUN_CREATED: RunCreated,
     EventType.RUN_STATUS_CHANGED: RunStatusChanged,
@@ -263,4 +323,11 @@ PAYLOADS: dict[EventType, type[Payload]] = {
     EventType.GUARDRAIL_TRIGGERED: GuardrailTriggered,
     EventType.A2A_MESSAGE: A2AMessage,
     EventType.PROMPT_VARIANT_SELECTED: PromptVariantSelected,
+    EventType.MISSION_STATUS_CHANGED: MissionStatusChanged,
+    EventType.MILESTONE_STATUS_CHANGED: MilestoneStatusChanged,
+    EventType.FEATURE_STATUS_CHANGED: FeatureStatusChanged,
+    EventType.HANDOFF_RECORDED: HandoffRecorded,
+    EventType.CHECKPOINT_CREATED: CheckpointCreated,
+    EventType.NEED_RAISED: NeedRaised,
+    EventType.NEED_ANSWERED: NeedAnswered,
 }

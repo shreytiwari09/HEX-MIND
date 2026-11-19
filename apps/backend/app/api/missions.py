@@ -161,8 +161,10 @@ async def _get(session: SessionDep, mission_id: uuid.UUID) -> Mission:
     return mission
 
 
-async def _move(session: SessionDep, mission: Mission, to: str, only_from: tuple[str, ...]) -> None:
-    if not await service.set_status(session, mission.id, to, only_from=only_from):
+async def _move(
+    session: SessionDep, mission: Mission, to: str, only_from: tuple[str, ...], reason: str
+) -> None:
+    if not await service.set_status(session, mission.id, to, only_from=only_from, reason=reason):
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             f"a {mission.status} mission cannot move to {to}",
@@ -183,7 +185,7 @@ def _launch(services: ServicesDep, mission: Mission) -> None:
 async def approve(mission_id: uuid.UUID, session: SessionDep, services: ServicesDep) -> MissionOut:
     """Approve the plan and start building."""
     mission = await _get(session, mission_id)
-    await _move(session, mission, "running", ("awaiting_approval",))
+    await _move(session, mission, "running", ("awaiting_approval",), "plan approved")
     _launch(services, mission)
     return await _mission_out(session, mission)
 
@@ -192,7 +194,7 @@ async def approve(mission_id: uuid.UUID, session: SessionDep, services: Services
 async def pause(mission_id: uuid.UUID, session: SessionDep) -> MissionOut:
     """The step in flight finishes, then the mission stops."""
     mission = await _get(session, mission_id)
-    await _move(session, mission, "paused", ("running",))
+    await _move(session, mission, "paused", ("running",), "paused by you")
     return await _mission_out(session, mission)
 
 
@@ -203,7 +205,7 @@ async def resume(mission_id: uuid.UUID, session: SessionDep, services: ServicesD
         raise HTTPException(
             status.HTTP_409_CONFLICT, "the mission is still finishing its current step; try again"
         )
-    await _move(session, mission, "running", ("paused",))
+    await _move(session, mission, "running", ("paused",), "resumed by you")
     _launch(services, mission)
     return await _mission_out(session, mission)
 
@@ -212,7 +214,7 @@ async def resume(mission_id: uuid.UUID, session: SessionDep, services: ServicesD
 async def stop(mission_id: uuid.UUID, session: SessionDep, services: ServicesDep) -> MissionOut:
     """Cancel the mission. A runner mid-step finishes that step and exits."""
     mission = await _get(session, mission_id)
-    await _move(session, mission, "cancelled", service.OPEN_STATES)
+    await _move(session, mission, "cancelled", service.OPEN_STATES, "stopped by you")
     if not services.mission_active(mission.id):
         await service.settle_cancelled(services, mission.id)
     return await _mission_out(session, mission)

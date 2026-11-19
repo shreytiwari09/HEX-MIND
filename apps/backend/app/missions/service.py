@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.db.models import (
+    Checkpoint,
     FeatureRow,
     HandoffRow,
     LLMCall,
@@ -113,6 +114,7 @@ async def create_mission(
                 position += 1
         await session.flush()
         await append_event(session, run.id, EventType.RUN_CREATED, payload={"title": plan.title})
+        await _mission_status_event(session, run.id, mission.status, None, "plan received")
         await sync_mission_folder(session, mission, worktree)
     except BaseException:
         await run_in_threadpool(git.remove_worktree, root, worktree)
@@ -186,6 +188,20 @@ async def record_handoff(
     session.add(row)
     await session.flush()
     await run_in_threadpool(folder.append_handoff, worktree, handoff)
+    await append_event(
+        session,
+        mission.run_id,
+        EventType.HANDOFF_RECORDED,
+        payload={
+            "feature_id": feature.key,
+            "persona": handoff.persona_id,
+            "model_used": handoff.model_used,
+            "files_changed": handoff.files_changed,
+            "tokens_in": handoff.tokens_in,
+            "tokens_out": handoff.tokens_out,
+            "cost_usd": handoff.cost_usd,
+        },
+    )
     return row
 
 
@@ -205,20 +221,107 @@ OPEN_STATES = ("awaiting_approval", "running", "paused", "needs_user")
 
 
 async def set_status(
-    session: AsyncSession, mission_id: uuid.UUID, to: str, *, only_from: tuple[str, ...]
+    session: AsyncSession,
+    mission_id: uuid.UUID,
+    to: str,
+    *,
+    only_from: tuple[str, ...],
+    reason: str | None = None,
 ) -> bool:
-    """Move a mission to `to` only if it is currently in one of `only_from`. The runner and the
-    API both use this, so a pause or stop is never overwritten by a runner that is finishing."""
+    """Move a mission to `to` only if it is currently in one of `only_from`, and record the
+    change. The runner and the API both use this, so a pause or stop is never overwritten by a
+    runner that is finishing."""
+    current = (
+        await session.execute(
+            select(Mission.status, Mission.run_id).where(Mission.id == mission_id).with_for_update()
+        )
+    ).first()
+    if current is None or current.status not in only_from:
+        return False
     values: dict[str, Any] = {"status": to}
     if to in ("completed", "cancelled", "failed"):
         values["finished_at"] = func.clock_timestamp()
-    result = await session.execute(
-        update(Mission)
-        .where(Mission.id == mission_id, Mission.status.in_(only_from))
-        .values(**values)
-        .returning(Mission.id)
+    await session.execute(update(Mission).where(Mission.id == mission_id).values(**values))
+    await _mission_status_event(session, current.run_id, to, current.status, reason)
+    return True
+
+
+async def change_status(
+    session: AsyncSession, mission: Mission, to: str, *, reason: str | None = None
+) -> None:
+    """Set a mission's status directly (the caller already holds it locked) and record it."""
+    previous, mission.status = mission.status, to
+    await _mission_status_event(session, mission.run_id, to, previous, reason)
+
+
+async def _mission_status_event(
+    session: AsyncSession, run_id: uuid.UUID, to: str, previous: str | None, reason: str | None
+) -> None:
+    await append_event(
+        session,
+        run_id,
+        EventType.MISSION_STATUS_CHANGED,
+        payload={"status": to, "previous": previous, "reason": reason},
     )
-    return result.first() is not None
+
+
+async def set_feature(
+    session: AsyncSession, mission: Mission, row: FeatureRow, status: str
+) -> None:
+    """Set a feature's status and record it, with its attempts and checkpoint as they are now."""
+    row.status = status
+    await append_event(
+        session,
+        mission.run_id,
+        EventType.FEATURE_STATUS_CHANGED,
+        payload={
+            "feature_id": row.key,
+            "title": row.title,
+            "persona": row.persona_id,
+            "status": status,
+            "attempts": row.attempts,
+            "commit": row.commit,
+        },
+    )
+
+
+async def set_milestone(
+    session: AsyncSession, mission: Mission, milestone: Milestone, status: str
+) -> None:
+    if milestone.status == status:
+        return
+    milestone.status = status
+    await append_event(
+        session,
+        mission.run_id,
+        EventType.MILESTONE_STATUS_CHANGED,
+        payload={"milestone_id": milestone.key, "title": milestone.title, "status": status},
+    )
+
+
+async def add_checkpoint(
+    session: AsyncSession,
+    mission: Mission,
+    *,
+    commit: str,
+    label: str,
+    feature: FeatureRow | None = None,
+) -> Checkpoint:
+    checkpoint = Checkpoint(
+        mission_id=mission.id,
+        feature_id=feature.id if feature else None,
+        commit=commit,
+        label=label,
+    )
+    session.add(checkpoint)
+    await session.flush()
+    await append_event(
+        session,
+        mission.run_id,
+        EventType.CHECKPOINT_CREATED,
+        payload={"commit": commit, "label": label, "feature_id": feature.key if feature else None},
+    )
+    return checkpoint
 
 
 async def create_need(
@@ -240,6 +343,18 @@ async def create_need(
     )
     session.add(need)
     await session.flush()
+    await append_event(
+        session,
+        mission.run_id,
+        EventType.NEED_RAISED,
+        payload={
+            "need_id": str(need.id),
+            "kind": kind,
+            "summary": summary,
+            "options": list(NEED_ACTIONS[kind]),
+            "feature_id": feature.key if feature else None,
+        },
+    )
     return need
 
 
@@ -293,15 +408,25 @@ async def answer_need(
     else:
         target = "running"
         if action == "retry" and feature is not None and need.kind == "feature_failed":
-            feature.status, feature.attempts = "pending", 0
+            feature.attempts = 0
+            await set_feature(session, mission, feature, "pending")
         elif action == "skip" and feature is not None:
-            feature.status = "skipped"
+            await set_feature(session, mission, feature, "skipped")
         elif action == "raise_budget":
             spent = await spent_usd(session, mission.run_id)
             if budget_usd is None or budget_usd <= spent:
                 raise InvalidTransition(f"the new budget must be above the {spent} USD spent")
             mission.budget_usd = budget_usd
-    if not await set_status(session, mission.id, target, only_from=("needs_user",)):
+    # The answer is recorded before the change it causes. If the mission turns out not to be
+    # waiting, InvalidTransition rolls the whole transaction back, event included.
+    await append_event(
+        session,
+        mission.run_id,
+        EventType.NEED_ANSWERED,
+        payload={"need_id": str(need.id), "action": action},
+    )
+    reason = f"you chose {action.replace('_', ' ')}"
+    if not await set_status(session, mission.id, target, only_from=("needs_user",), reason=reason):
         raise InvalidTransition("the mission is not waiting for you")
     need.status = "answered"
     need.answer = {"action": action, "budget_usd": float(budget_usd) if budget_usd else None}

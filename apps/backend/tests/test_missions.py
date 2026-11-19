@@ -108,7 +108,7 @@ async def test_creating_a_mission_stores_the_plan_and_renders_the_mission_folder
     worktree = Path(run.worktree_path)
     assert worktree.parent == app.state.settings.data_dir / "worktrees"
     assert git_output(worktree, "rev-parse", "--abbrev-ref", "HEAD").strip() == mission["branch"]
-    assert [e.type for e in events] == ["run_created"]
+    assert [e.type for e in events] == ["run_created", "mission_status_changed"]
 
     # features.json follows PRD §9.3 and is rendered from the database.
     document = json.loads((worktree / ".hex" / "mission" / "features.json").read_text())

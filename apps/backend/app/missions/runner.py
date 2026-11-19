@@ -37,7 +37,6 @@ from app.a2a.client import CrewCallFailed, call_crew
 from app.a2a.protocol import PersonaRequest
 from app.agents.mcp_bridge import McpWorkspace
 from app.db.models import (
-    Checkpoint,
     CheckResult,
     FeatureRow,
     HandoffRow,
@@ -151,7 +150,7 @@ class MissionRunner:
                     FeatureRow.mission_id == self.mission_id, FeatureRow.status == "in_progress"
                 )
             ):
-                feature.status = "pending"
+                await service.set_feature(session, mission, feature, "pending")
             await session.flush()
             await service.sync_mission_folder(session, mission, self.worktree)
 
@@ -183,11 +182,10 @@ class MissionRunner:
     async def _set_milestone(self, milestone_id: uuid.UUID, status: str) -> None:
         async with self.services.sessionmaker.begin() as session:
             milestone = await session.get(Milestone, milestone_id)
-            assert milestone is not None
-            milestone.status = status
-            await session.flush()
             mission = await session.get(Mission, self.mission_id)
-            assert mission is not None
+            assert milestone is not None and mission is not None
+            await service.set_milestone(session, mission, milestone, status)
+            await session.flush()
             await service.sync_mission_folder(session, mission, self.worktree)
 
     async def _running(self) -> bool:
@@ -236,7 +234,9 @@ class MissionRunner:
         assert self.telemetry is not None and self.services.a2a_http is not None
         async with self.services.sessionmaker.begin() as session:
             row = await self._feature(session, key)
-            row.status = "in_progress"
+            mission = await session.get(Mission, self.mission_id)
+            assert mission is not None
+            await service.set_feature(session, mission, row, "in_progress")
             feature = Feature.model_validate(
                 {
                     "id": row.key,
@@ -254,8 +254,6 @@ class MissionRunner:
                 )
             ]
             started = await session.scalar(select(func.clock_timestamp()))
-            mission = await session.get(Mission, self.mission_id)
-            assert mission is not None
             await service.sync_mission_folder(session, mission, self.worktree)
         before = await run_in_threadpool(git.head, self.worktree)
 
@@ -327,14 +325,20 @@ class MissionRunner:
     async def _rejected(self, key: str, feedback: str, detail: str) -> Attempt:
         async with self.services.sessionmaker.begin() as session:
             row = await self._feature(session, key)
+            mission = await session.get(Mission, self.mission_id)
+            assert mission is not None
             row.attempts += 1
-            row.status = "pending"
+            await service.set_feature(session, mission, row, "pending")
         return Attempt("rejected", feedback=feedback, detail=detail)
 
     async def _reset_feature(self, key: str) -> None:
         """An outage is not the agent's fault: no attempt is counted."""
         async with self.services.sessionmaker.begin() as session:
-            (await self._feature(session, key)).status = "pending"
+            mission = await session.get(Mission, self.mission_id)
+            assert mission is not None
+            await service.set_feature(
+                session, mission, await self._feature(session, key), "pending"
+            )
 
     async def _checkpoint(self, key: str, handoff: Handoff) -> None:
         """Accept the feature: handoff, mission files, then a commit named after the feature."""
@@ -348,14 +352,10 @@ class MissionRunner:
             await service.sync_mission_folder(session, mission, self.worktree)
             sha = await run_in_threadpool(git.commit_all, self.worktree, f"{row.key}: {row.title}")
             row.commit = sha
-            session.add(
-                Checkpoint(
-                    mission_id=mission.id,
-                    feature_id=row.id,
-                    commit=sha,
-                    label=f"{row.key}: {row.title}",
-                )
+            await service.add_checkpoint(
+                session, mission, commit=sha, label=f"{row.key}: {row.title}", feature=row
             )
+            await service.set_feature(session, mission, row, "done")
             await session.flush()
             await service.sync_mission_folder(session, mission, self.worktree)
 
@@ -459,7 +459,7 @@ class MissionRunner:
             row = await self._feature(session, key)
             mission = await session.get(Mission, self.mission_id)
             assert mission is not None
-            row.status = "failed"
+            await service.set_feature(session, mission, row, "failed")
             if await service.set_status(
                 session, self.mission_id, "needs_user", only_from=("running",)
             ):
@@ -499,12 +499,16 @@ class MissionRunner:
                 git.commit_all, self.worktree, "Mission complete: update mission files"
             )
             async with self.services.sessionmaker.begin() as session:
-                session.add(
-                    Checkpoint(mission_id=self.mission_id, commit=sha, label="Mission complete")
-                )
+                mission = await session.get(Mission, self.mission_id)
+                assert mission is not None
+                await service.add_checkpoint(session, mission, commit=sha, label="Mission complete")
         async with self.services.sessionmaker.begin() as session:
             done = await service.set_status(
-                session, self.mission_id, "completed", only_from=("running",)
+                session,
+                self.mission_id,
+                "completed",
+                only_from=("running",),
+                reason="every feature is done or skipped",
             )
         if done:
             await set_status(self.services, self.run_id, "completed", finished=True)

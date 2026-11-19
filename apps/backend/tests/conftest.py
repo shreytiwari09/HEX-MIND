@@ -85,6 +85,7 @@ async def app(migrated_database: str, settings: Settings) -> AsyncIterator[FastA
     async with app.state.engine.begin() as conn:
         await conn.execute(text(f"TRUNCATE {tables} CASCADE"))
     yield app
+    await app.state.event_hub.stop()
     await services.a2a_http.aclose()
     await app.state.engine.dispose()
 

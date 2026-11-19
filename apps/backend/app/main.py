@@ -6,12 +6,23 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.a2a.client import CrewServiceProcess, a2a_http_client
-from app.api import a2a, conversations, health, missions, projects, providers, runs, tasks
+from app.api import (
+    a2a,
+    conversations,
+    health,
+    missions,
+    projects,
+    providers,
+    runs,
+    stream,
+    tasks,
+)
 from app.auth import require_token
 from app.chat.service import ChatService
 from app.config import Settings, get_settings
 from app.context.manager import ContextManager
 from app.db.session import create_engine, create_sessionmaker
+from app.events.hub import EventHub
 from app.memory.store import Memory, OllamaEmbedding
 from app.orchestration.background import BackgroundTasks
 from app.orchestration.services import Services
@@ -48,6 +59,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await crew_service.start(services.a2a_http)
         yield
         await services.background.cancel_all()
+        await app.state.event_hub.stop()
         crew_service.stop()
         await services.a2a_http.aclose()
         for adapter in adapters:
@@ -61,6 +73,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.services = services
     app.state.provider_router = services.providers
     app.state.chat = ChatService(services)
+    app.state.event_hub = EventHub(settings.database_url)
 
     app.add_middleware(
         CORSMiddleware,
@@ -72,4 +85,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     for module in (health, projects, runs, providers, conversations, tasks, a2a, missions):
         app.include_router(module.router, prefix="/api", dependencies=[Depends(require_token)])
     app.include_router(missions.needs_router, prefix="/api", dependencies=[Depends(require_token)])
+    app.include_router(stream.router)  # authenticates by its first frame, not a header
     return app

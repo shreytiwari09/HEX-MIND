@@ -133,7 +133,9 @@ async def apply_mission(
             commit=commit,
             message=f"H.E.X Mind: {ctx.mission.title}",
         )
-        ctx.mission.status = "applied"
+        await service.change_status(
+            session, ctx.mission, "applied", reason="applied to your project"
+        )
         ctx.mission.apply_record = record
         ctx.run.pre_apply_commit = record["pre_apply_commit"]
 
@@ -148,7 +150,9 @@ async def revert_mission(services: Services, mission_id: uuid.UUID) -> None:
             ctx.mission.apply_record or {},
             message=f"Revert H.E.X Mind: {ctx.mission.title}",
         )
-        ctx.mission.status = "completed"
+        await service.change_status(
+            session, ctx.mission, "completed", reason="reverted in your project"
+        )
         ctx.mission.apply_record = record
 
 
@@ -157,7 +161,7 @@ async def keep_mission(services: Services, mission_id: uuid.UUID) -> None:
     async with services.sessionmaker.begin() as session:
         ctx = await _load(session, mission_id, lock=True)
         _require(ctx, services, ("completed",), "kept")
-        ctx.mission.status = "kept"
+        await service.change_status(session, ctx.mission, "kept", reason="kept for later")
 
 
 async def discard_mission(services: Services, mission_id: uuid.UUID) -> None:
@@ -171,7 +175,7 @@ async def discard_mission(services: Services, mission_id: uuid.UUID) -> None:
         await run_in_threadpool(git.delete_branch, ctx.workspace, ctx.mission.branch)
         ctx.run.worktree_path = None
         previous = ctx.mission.status
-        ctx.mission.status = "discarded"
+        await service.change_status(session, ctx.mission, "discarded", reason="discarded")
         if ctx.mission.finished_at is None:
             ctx.mission.finished_at = func.clock_timestamp()
         if ctx.run.status in ("queued", "running", "paused"):
@@ -232,7 +236,8 @@ async def restore_checkpoint(services: Services, mission_id: uuid.UUID, commit: 
         )
         later_ids = [f.id for f in later]
         for row in later:
-            row.status, row.attempts, row.commit = "pending", 0, None
+            row.attempts, row.commit = 0, None
+            await service.set_feature(session, ctx.mission, row, "pending")
         if later_ids:
             await session.execute(delete(HandoffRow).where(HandoffRow.feature_id.in_(later_ids)))
         await session.execute(
@@ -247,9 +252,12 @@ async def restore_checkpoint(services: Services, mission_id: uuid.UUID, commit: 
             .values(status="answered", answer={"action": "restored_checkpoint"})
         )
         await session.flush()
-        await _recompute_milestones(session, mission_id)
+        await _recompute_milestones(session, ctx.mission)
 
-        ctx.mission.status, ctx.mission.finished_at = "paused", None
+        ctx.mission.finished_at = None
+        await service.change_status(
+            session, ctx.mission, "paused", reason="restored to a checkpoint"
+        )
         ctx.mission.apply_record = None
         previous_run = ctx.run.status
         ctx.run.status, ctx.run.finished_at = "paused", None
@@ -263,10 +271,10 @@ async def restore_checkpoint(services: Services, mission_id: uuid.UUID, commit: 
         await service.sync_mission_folder(session, ctx.mission, ctx.worktree)
 
 
-async def _recompute_milestones(session: AsyncSession, mission_id: uuid.UUID) -> None:
+async def _recompute_milestones(session: AsyncSession, mission: Mission) -> None:
     milestones = list(
         await session.scalars(
-            select(Milestone).where(Milestone.mission_id == mission_id).order_by(Milestone.position)
+            select(Milestone).where(Milestone.mission_id == mission.id).order_by(Milestone.position)
         )
     )
     for milestone in milestones:
@@ -276,6 +284,9 @@ async def _recompute_milestones(session: AsyncSession, mission_id: uuid.UUID) ->
             )
         )
         finished = [s in ("done", "skipped") for s in statuses]
-        milestone.status = (
-            "completed" if all(finished) else "active" if any(finished) else "pending"
+        await service.set_milestone(
+            session,
+            mission,
+            milestone,
+            "completed" if all(finished) else "active" if any(finished) else "pending",
         )
