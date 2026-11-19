@@ -14,6 +14,7 @@ from app.db.session import create_engine, create_sessionmaker
 from app.orchestration.background import BackgroundTasks
 from app.orchestration.services import Services
 from app.providers.factory import build_providers
+from app.providers.secrets import make_key_store
 from app.telemetry.tracing import setup_tracing
 
 
@@ -22,7 +23,9 @@ def create_crew_service() -> Starlette:
     setup_tracing(settings)
     engine = create_engine(settings.database_url)
     sessionmaker = create_sessionmaker(engine)
-    providers, adapters = build_providers(settings, sessionmaker)
+    providers, adapters = build_providers(
+        settings, sessionmaker, make_key_store(settings.key_store)
+    )
     services = Services(
         settings=settings,
         sessionmaker=sessionmaker,

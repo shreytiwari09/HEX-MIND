@@ -11,6 +11,7 @@ from app import __version__
 from app.a2a.client import CrewServiceProcess, a2a_http_client
 from app.api import (
     a2a,
+    assignments,
     connections,
     conversations,
     health,
@@ -40,7 +41,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     setup_tracing(settings)
     engine = create_engine(settings.database_url)
     sessionmaker = create_sessionmaker(engine)
-    providers_router, adapters = build_providers(settings, sessionmaker)
+    keystore = make_key_store(settings.key_store)
+    providers_router, adapters = build_providers(settings, sessionmaker, keystore)
     memory = None
     if settings.memory_enabled:
         memory = Memory(
@@ -55,7 +57,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         background=BackgroundTasks(),
         memory=memory,
         a2a_http=a2a_http_client(settings),
-        keystore=make_key_store(settings.key_store),
+        keystore=keystore,
     )
     crew_service = CrewServiceProcess(settings)
 
@@ -105,6 +107,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         a2a,
         missions,
         connections,
+        assignments,
     ):
         app.include_router(module.router, prefix="/api", dependencies=[Depends(require_token)])
     app.include_router(missions.needs_router, prefix="/api", dependencies=[Depends(require_token)])

@@ -115,7 +115,7 @@ async def test_the_snapshot_then_the_replayed_events_without_gaps(
         "previous": None,
         "reason": "plan received",
     }
-    assert {e["schema_version"] for e in events} == {4}
+    assert {e["schema_version"] for e in events} == {5}
 
     # A client that reconnects with its last seq gets only what it missed, and nothing at all
     # replays when it is already up to date.

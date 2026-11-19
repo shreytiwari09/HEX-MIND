@@ -44,10 +44,12 @@ class AnthropicAdapter:
         model: str,
         pricing: Pricing,
         extra_headers: dict[str, str] | None = None,
+        pricing_name: str | None = None,
         timeout_s: float = 120.0,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.name = name
+        self._pricing_name = pricing_name or name
         self.model = model
         self._api_key = api_key
         self._pricing = pricing
@@ -182,7 +184,9 @@ class AnthropicAdapter:
             tool_calls=calls,
             input_tokens=input_tokens if usage else None,
             output_tokens=output_tokens,
-            est_cost_usd=self._pricing.cost(self.name, self.model, input_tokens, output_tokens),
+            est_cost_usd=self._pricing.cost(
+                self._pricing_name, self.model, input_tokens, output_tokens
+            ),
         )
 
 

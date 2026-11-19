@@ -1,5 +1,6 @@
 """Provider-neutral LLM types (plan §4.3). Workers depend on these, never on a provider SDK."""
 
+import uuid
 from decimal import Decimal
 from typing import Any, Literal, Protocol
 
@@ -64,6 +65,9 @@ class LLMResult(BaseModel):
     attempts: int
     fallback_from: str | None = None
     error: str | None = None
+    # Which connection and pool key served a routed call (labels only).
+    connection_id: uuid.UUID | None = None
+    key_label: str | None = None
 
     @property
     def ok(self) -> bool:

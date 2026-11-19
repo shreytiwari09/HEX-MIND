@@ -15,7 +15,7 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -30,6 +30,10 @@ from app.providers.base import (
     ProviderError,
     ProviderHealth,
 )
+from app.providers.routing import Route
+
+if TYPE_CHECKING:
+    from app.providers.routed import RouteExecutor
 
 
 @dataclass(frozen=True)
@@ -39,6 +43,8 @@ class CallContext:
     agent_id: str | None = None
     # Task complexity, used by the selection policy when per-complexity orders are configured.
     complexity: str | None = None
+    # When set, the call goes to this persona route instead of the global provider order.
+    route: "Route | None" = None
 
 
 @dataclass
@@ -82,6 +88,8 @@ class ProviderRouter:
         self._cooldown_until: dict[str, float] = {}
         self._cooldown_reason: dict[str, str] = {}
         self._health_cache: dict[str, tuple[float, ProviderHealth]] = {}
+        # Serves calls that carry a persona route (PRD §10.4); set by build_providers.
+        self.executor: RouteExecutor | None = None
 
     def adapter(self, name: str) -> ProviderAdapter:
         return self._adapters[name]
@@ -146,6 +154,8 @@ class ProviderRouter:
     ) -> LLMResult:
         """Complete via the policy chain, or via one explicit provider (no fallback)."""
         ctx = ctx or CallContext()
+        if ctx.route is not None and self.executor is not None and provider is None:
+            return await self.executor.complete(self, request, ctx)
         if provider is not None:
             return (await self._attempt(self._adapters[provider], request, ctx, None)).result
 
@@ -207,20 +217,23 @@ class ProviderRouter:
         request: LLMRequest,
         ctx: CallContext,
         fallback_from: str | None,
+        *,
+        max_attempts: int | None = None,
     ) -> _Attempt:
         await self._emit(ctx, EventType.LLM_CALL_STARTED, adapter, {"purpose": request.purpose})
         started = time.perf_counter()
         completion: Completion | None = None
         error: ProviderError | None = None
         attempts = 0
-        while attempts < self._max_attempts:
+        limit = max_attempts or self._max_attempts
+        while attempts < limit:
             attempts += 1
             try:
                 completion = await adapter.complete(request)
                 break
             except ProviderError as exc:
                 error = exc
-                if not exc.retryable or attempts >= self._max_attempts:
+                if not exc.retryable or attempts >= limit:
                     break
                 delay = self._backoff_s * 2 ** (attempts - 1)
                 if exc.retry_after is not None:
@@ -239,6 +252,8 @@ class ProviderRouter:
             attempts=attempts,
             fallback_from=fallback_from,
             error=None if completion else str(error),
+            connection_id=getattr(adapter, "connection_id", None),
+            key_label=getattr(adapter, "key_label", None),
         )
         await self._log(request, result, ctx)
         await self._emit(
@@ -278,6 +293,8 @@ class ProviderRouter:
                     attempts=result.attempts,
                     fallback_from=result.fallback_from,
                     error=result.error,
+                    connection_id=result.connection_id,
+                    key_label=result.key_label,
                 )
             )
 

@@ -9,13 +9,18 @@ from app.config import Settings
 from app.providers.ollama import OllamaAdapter
 from app.providers.openai_compat import GEMINI_BASE_URL, GROQ_BASE_URL, OpenAICompatAdapter
 from app.providers.pricing import Pricing
+from app.providers.routed import RouteExecutor
 from app.providers.router import ProviderRouter
+from app.providers.secrets import KeyStore
 
 
 def build_providers(
-    settings: Settings, sessionmaker: async_sessionmaker[AsyncSession]
+    settings: Settings,
+    sessionmaker: async_sessionmaker[AsyncSession],
+    keystore: KeyStore | None = None,
 ) -> tuple[ProviderRouter, list[Any]]:
-    """Returns the router and its adapters (which the caller closes on shutdown)."""
+    """Returns the router and its adapters (which the caller closes on shutdown). With a key
+    store, calls that carry a persona route are served from the user's connections."""
     ollama = OllamaAdapter(
         settings.ollama_url,
         settings.ollama_model,
@@ -48,4 +53,14 @@ def build_providers(
         order_by_complexity=settings.provider_order_by_complexity,
         quota_cooldown_s=settings.quota_cooldown_s,
     )
+    if keystore is not None:
+        executor = RouteExecutor(
+            sessionmaker,
+            keystore,
+            pricing,
+            ollama_num_ctx=settings.ollama_num_ctx,
+            ollama_timeout_s=settings.ollama_timeout_s,
+        )
+        router.executor = executor
+        adapters.append(executor)  # closed with the others
     return router, adapters

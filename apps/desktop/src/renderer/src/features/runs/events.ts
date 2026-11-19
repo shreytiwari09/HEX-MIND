@@ -122,6 +122,10 @@ export function describeEvent(event: AgentEvent): string {
       return `checkpoint: ${event.payload.label}`
     case 'need_raised':
       return event.payload.summary
+    case 'key_rotated': {
+      const p = event.payload
+      return `${p.connection}: ${p.from_key} → ${p.to_key} (${p.reason})`
+    }
     case 'need_answered':
       return `answered: ${event.payload.action.replace('_', ' ')}`
     default:

@@ -46,7 +46,7 @@ const TASKS: Task[] = [
   }
 ]
 
-const base = { schema_version: 4 as const, run_id: 'r1', ts: '2026-11-02T10:00:00Z', agent_id: null, task_id: null }
+const base = { schema_version: 5 as const, run_id: 'r1', ts: '2026-11-02T10:00:00Z', agent_id: null, task_id: null }
 const EVENTS: AgentEvent[] = [
   { ...base, event_id: 'e1', seq: 1, type: 'agent_started', payload: { agent: 'reviewer', framework: 'adk', kind: 'llm', parent: null } },
   { ...base, event_id: 'e2', seq: 2, type: 'callback_fired', payload: { framework: 'adk', hook: 'after_model_callback', agent: 'reviewer', detail: 'groq/m' } },

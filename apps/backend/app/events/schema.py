@@ -9,7 +9,8 @@ callbacks through the TelemetryHub (agent_started, agent_finished, callback_fire
 schema_validated) and reserves guardrail_triggered, a2a_message and prompt_variant_selected for
 P2/P4. v3 (P2) gives a2a_message the fields both ends of an A2A exchange record. v4 (P3) adds
 the mission events (mission, milestone and feature status, handoffs, checkpoints, Needs you)
-that the Mission Control stream carries. Any change
+that the Mission Control stream carries. v5 (P4) adds key_rotated, a pool key swapped after a
+rate limit, quota or auth error. Any change
 needs agreement from all owners and bumps SCHEMA_VERSION.
 
 Payloads carry `stub: true` when the work they describe was not really performed (M2 worker
@@ -21,7 +22,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 Complexity = Literal["low", "medium", "high"]
 Framework = Literal["adk", "crewai"]
@@ -65,6 +66,8 @@ class EventType(StrEnum):
     CHECKPOINT_CREATED = "checkpoint_created"
     NEED_RAISED = "need_raised"
     NEED_ANSWERED = "need_answered"
+    # v5: model routing (P4)
+    KEY_ROTATED = "key_rotated"
 
 
 class Payload(BaseModel):
@@ -294,6 +297,15 @@ class NeedAnswered(Payload):
     action: str
 
 
+class KeyRotated(Payload):
+    """A connection's pool moved from one key to the next. Labels only, never the key."""
+
+    connection: str
+    from_key: str
+    to_key: str
+    reason: str
+
+
 PAYLOADS: dict[EventType, type[Payload]] = {
     EventType.RUN_CREATED: RunCreated,
     EventType.RUN_STATUS_CHANGED: RunStatusChanged,
@@ -330,4 +342,5 @@ PAYLOADS: dict[EventType, type[Payload]] = {
     EventType.CHECKPOINT_CREATED: CheckpointCreated,
     EventType.NEED_RAISED: NeedRaised,
     EventType.NEED_ANSWERED: NeedAnswered,
+    EventType.KEY_ROTATED: KeyRotated,
 }

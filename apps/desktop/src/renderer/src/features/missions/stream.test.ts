@@ -40,7 +40,7 @@ const MISSION = { id: 'm1', title: 'Todo app', status: 'running', milestones: []
 
 function event(seq: number): AgentEvent {
   return {
-    schema_version: 4,
+    schema_version: 5,
     event_id: `e${seq}`,
     run_id: 'r1',
     seq,

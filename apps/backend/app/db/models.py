@@ -244,8 +244,13 @@ class LLMCall(Base):
     run_id: Mapped[uuid.UUID | None] = _fk("runs.id", nullable=True, ondelete="SET NULL")
     task_id: Mapped[uuid.UUID | None] = _fk("tasks.id", nullable=True, ondelete="SET NULL")
     purpose: Mapped[str] = mapped_column(String(32))
-    provider: Mapped[str] = mapped_column(String(32))
+    provider: Mapped[str] = mapped_column(String(64))  # a connection's name, or a built-in provider
     model: Mapped[str] = mapped_column(String(128))
+    # Which pool key served the call (routed calls only; never the secret itself).
+    connection_id: Mapped[uuid.UUID | None] = _fk(
+        "connections.id", nullable=True, ondelete="SET NULL"
+    )
+    key_label: Mapped[str | None] = mapped_column(String(64))
     input_tokens: Mapped[int | None] = mapped_column(Integer)
     output_tokens: Mapped[int | None] = mapped_column(Integer)
     latency_ms: Mapped[int] = mapped_column(Integer)
@@ -434,3 +439,21 @@ class ConnectionKey(Base):
     position: Mapped[int] = mapped_column(Integer, default=0)
     disabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = _created_at()
+
+
+class ModelAssignment(Base):
+    """Which models a persona uses (PRD §10.4): a primary, a fallback chain, and an escalation
+    model, each a (connection, model) pair. `set_by` says whether the user chose it or Auto did."""
+
+    __tablename__ = "model_assignments"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    persona_id: Mapped[str] = mapped_column(String(32), unique=True)
+    primary_connection_id: Mapped[uuid.UUID] = _fk("connections.id")
+    primary_model: Mapped[str] = mapped_column(String(128))
+    # [{"connection_id": "...", "model": "..."}, ...], tried in order after the primary.
+    fallbacks: Mapped[list[Any]] = mapped_column(default=list)
+    escalate: Mapped[dict[str, Any] | None] = mapped_column()
+    set_by: Mapped[str] = mapped_column(String(8), default="user")  # user | auto
+    reason: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = _updated_at()

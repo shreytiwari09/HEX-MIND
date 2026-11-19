@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 
+from app.context.redact import REDACTED, redact
 from app.providers.base import (
     ChatMessage,
     Completion,
@@ -46,24 +47,35 @@ class OpenAICompatAdapter:
         timeout_s: float = 120.0,
         transport: httpx.AsyncBaseTransport | None = None,
         requires_thought_signatures: bool = False,
+        extra_headers: dict[str, str] | None = None,
+        pricing_name: str | None = None,
+        requires_key: bool = True,
     ) -> None:
         self.name = name
+        # The price table is keyed by provider type, while `name` may be a connection's name.
+        self._pricing_name = pricing_name or name
         self._requires_signatures = requires_thought_signatures
         self.model = model
         self._api_key = api_key
+        self._requires_key = requires_key
         self._pricing = pricing
         self._client = httpx.AsyncClient(
             base_url=base_url,
             timeout=timeout_s,
             transport=transport,
-            headers={"Authorization": f"Bearer {api_key}"} if api_key else {},
+            headers={
+                **(extra_headers or {}),
+                **({"Authorization": f"Bearer {api_key}"} if api_key else {}),
+            },
+            follow_redirects=False,  # never replay the key at a redirect target
         )
         # Latest rate-limit headers reported by the provider (shown in provider status).
         self.rate_limit: dict[str, str] = {}
 
     @property
     def configured(self) -> bool:
-        return bool(self._api_key)
+        # Local OpenAI-compatible servers (LM Studio) need no key.
+        return bool(self._api_key) or not self._requires_key
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -148,7 +160,7 @@ class OpenAICompatAdapter:
             salvaged = _salvage_pseudo_tool_call(response, request.tools)
             if salvaged is not None:
                 return Completion(content=salvaged)
-            raise _classify(self.name, response)
+            raise _classify(self.name, response, self._api_key)
 
         data = response.json()
         message = (data.get("choices") or [{}])[0].get("message") or {}
@@ -160,7 +172,9 @@ class OpenAICompatAdapter:
             tool_calls=[_from_openai_call(c) for c in message.get("tool_calls") or []],
             input_tokens=input_tokens,
             output_tokens=output_tokens,
-            est_cost_usd=self._pricing.cost(self.name, self.model, input_tokens, output_tokens),
+            est_cost_usd=self._pricing.cost(
+                self._pricing_name, self.model, input_tokens, output_tokens
+            ),
         )
 
 
@@ -188,10 +202,14 @@ def _salvage_pseudo_tool_call(
     return json.dumps(attempt["arguments"])
 
 
-def _classify(provider: str, response: httpx.Response) -> ProviderError:
+def _classify(provider: str, response: httpx.Response, secret: str | None = None) -> ProviderError:
     status = response.status_code
     body = response.text  # classify on the full body; keep the message short
-    text = body[:400]
+    # Providers often echo the rejected key in their error text, and this message is stored in
+    # `llm_calls` and events: scrub it first.
+    text = redact(body[:400])
+    if secret:
+        text = text.replace(secret, REDACTED)
     retry_after = _retry_after(response)
     kind: ErrorKind
     if status in (401, 403) or "API key" in body:
