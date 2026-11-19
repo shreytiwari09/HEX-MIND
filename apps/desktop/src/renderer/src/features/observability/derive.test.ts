@@ -15,7 +15,7 @@ import {
 let seq = 0
 function ev(type: AgentEvent['type'], payload: object, agent_id: string | null = null, task_id: string | null = null): AgentEvent {
   seq += 1
-  return { schema_version: 5, event_id: `e${seq}`, run_id: 'r1', seq, ts: '2026-11-02T10:00:00Z', type, agent_id, task_id, payload } as AgentEvent
+  return { schema_version: 6, event_id: `e${seq}`, run_id: 'r1', seq, ts: '2026-11-02T10:00:00Z', type, agent_id, task_id, payload } as AgentEvent
 }
 
 function runEvents(): AgentEvent[] {

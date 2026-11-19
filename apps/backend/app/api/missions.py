@@ -6,11 +6,21 @@ from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.api.deps import ServicesDep, SessionDep, SettingsDep
-from app.api.schemas import FileDiffOut, RunDiffOut
-from app.db.models import Mission, Need, Project
+from app.api.schemas import EventOut, FileDiffOut, RunDiffOut
+from app.db.models import (
+    AgentEvent,
+    Connection,
+    LLMCall,
+    Mission,
+    ModelAssignment,
+    Need,
+    PersonaBudget,
+    Project,
+)
+from app.events.schema import EventType
 from app.missions import lifecycle, service
 from app.missions.apply import Refused
 from app.missions.models import MissionPlan
@@ -69,6 +79,8 @@ class MissionOut(BaseModel):
     branch: str
     budget_usd: float | None
     spent_usd: float  # summed from the provider layer's llm_calls
+    tokens_in: int
+    tokens_out: int
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
@@ -78,6 +90,7 @@ class MissionOut(BaseModel):
 
 async def _mission_out(session: SessionDep, mission: Mission) -> MissionOut:
     document = await service.features_document(session, mission)
+    totals = await service.usage(session, mission.run_id)
     return MissionOut(
         id=mission.id,
         project_id=mission.project_id,
@@ -87,7 +100,9 @@ async def _mission_out(session: SessionDep, mission: Mission) -> MissionOut:
         status=mission.status,
         branch=mission.branch,
         budget_usd=float(mission.budget_usd) if mission.budget_usd is not None else None,
-        spent_usd=float(await service.spent_usd(session, mission.run_id)),
+        spent_usd=float(totals.spent_usd),
+        tokens_in=totals.tokens_in,
+        tokens_out=totals.tokens_out,
         created_at=mission.created_at,
         started_at=mission.started_at,
         finished_at=mission.finished_at,
@@ -397,3 +412,160 @@ async def restore_checkpoint(
     except Refused as exc:
         raise _refuse(exc) from None
     return await _after(session, mission_id)
+
+
+# ---------- costs and delegation (PRD S8) ----------
+
+
+class CostRow(BaseModel):
+    spent_usd: float
+    calls: int
+    tokens_in: int
+    tokens_out: int
+
+
+class PersonaCost(CostRow):
+    persona_id: str | None  # None: calls not made for a persona (routing, summaries)
+    budget_usd: float | None
+
+
+class ModelCost(CostRow):
+    provider: str  # the connection's name
+    model: str
+
+
+class CostsOut(BaseModel):
+    total_usd: float
+    budget_usd: float | None
+    tokens_in: int
+    tokens_out: int
+    calls: int
+    # Successful calls whose model has no known price: their cost is not in the totals.
+    unpriced_calls: int
+    by_persona: list[PersonaCost]
+    by_model: list[ModelCost]
+
+
+@router.get("/{mission_id}/costs", response_model=CostsOut)
+async def mission_costs(mission_id: uuid.UUID, session: SessionDep) -> CostsOut:
+    """Real spend and tokens from the provider layer, by persona and by model."""
+    mission = await _get(session, mission_id)
+    totals = await service.usage(session, mission.run_id)
+
+    def rows(*columns):  # type: ignore[no-untyped-def]
+        return (
+            select(
+                *columns,
+                func.coalesce(func.sum(LLMCall.est_cost_usd), 0),
+                func.count(),
+                func.coalesce(func.sum(LLMCall.input_tokens), 0),
+                func.coalesce(func.sum(LLMCall.output_tokens), 0),
+            )
+            .where(LLMCall.run_id == mission.run_id)
+            .group_by(*columns)
+        )
+
+    budgets = {
+        pid: float(b)
+        for pid, b in (
+            await session.execute(select(PersonaBudget.persona_id, PersonaBudget.budget_usd))
+        )
+        if b is not None
+    }
+    by_persona = [
+        PersonaCost(
+            persona_id=pid,
+            budget_usd=budgets.get(pid) if pid else None,
+            spent_usd=float(cost),
+            calls=calls,
+            tokens_in=int(tin),
+            tokens_out=int(tout),
+        )
+        for pid, cost, calls, tin, tout in await session.execute(rows(LLMCall.persona_id))
+    ]
+    by_model = [
+        ModelCost(
+            provider=provider,
+            model=model,
+            spent_usd=float(cost),
+            calls=calls,
+            tokens_in=int(tin),
+            tokens_out=int(tout),
+        )
+        for provider, model, cost, calls, tin, tout in await session.execute(
+            rows(LLMCall.provider, LLMCall.model)
+        )
+    ]
+    return CostsOut(
+        total_usd=float(totals.spent_usd),
+        budget_usd=float(mission.budget_usd) if mission.budget_usd is not None else None,
+        tokens_in=totals.tokens_in,
+        tokens_out=totals.tokens_out,
+        calls=totals.calls,
+        unpriced_calls=totals.unpriced_calls,
+        by_persona=sorted(by_persona, key=lambda r: -r.spent_usd),
+        by_model=sorted(by_model, key=lambda r: -r.spent_usd),
+    )
+
+
+class DelegationAssignment(BaseModel):
+    persona_id: str
+    connection: str | None
+    model: str
+    set_by: str
+    reason: str | None
+    escalate_model: str | None
+    budget_usd: float | None
+
+
+class DelegationOut(BaseModel):
+    # How each persona is set up now (not a history), with the reason Auto gave.
+    assignments: list[DelegationAssignment]
+    # What actually happened in this mission, oldest first.
+    events: list[EventOut]
+
+
+DELEGATION_EVENTS = (
+    EventType.PROVIDER_FALLBACK,
+    EventType.KEY_ROTATED,
+    EventType.ESCALATED,
+    EventType.BUDGET_WARNING,
+    EventType.NEED_RAISED,
+)
+
+
+@router.get("/{mission_id}/delegation", response_model=DelegationOut)
+async def mission_delegation(mission_id: uuid.UUID, session: SessionDep) -> DelegationOut:
+    """The delegation log (PRD §10.6): who uses which model and why, and every fallback, key
+    rotation, escalation and budget event of this mission."""
+    mission = await _get(session, mission_id)
+    names = {c.id: c.name for c in await session.scalars(select(Connection))}
+    budgets = {
+        pid: float(b)
+        for pid, b in await session.execute(
+            select(PersonaBudget.persona_id, PersonaBudget.budget_usd)
+        )
+    }
+    assignments = [
+        DelegationAssignment(
+            persona_id=a.persona_id,
+            connection=names.get(a.primary_connection_id),
+            model=a.primary_model,
+            set_by=a.set_by,
+            reason=a.reason,
+            escalate_model=(a.escalate or {}).get("model"),
+            budget_usd=budgets.get(a.persona_id),
+        )
+        for a in await session.scalars(select(ModelAssignment).order_by(ModelAssignment.persona_id))
+    ]
+    events = await session.scalars(
+        select(AgentEvent)
+        .where(
+            AgentEvent.run_id == mission.run_id,
+            AgentEvent.type.in_([t.value for t in DELEGATION_EVENTS]),
+        )
+        .order_by(AgentEvent.seq)
+    )
+    return DelegationOut(
+        assignments=assignments, events=[EventOut.model_validate(e) for e in events]
+    )

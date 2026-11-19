@@ -6,6 +6,7 @@ and renders the mission folder in the worktree. The user's files are never touch
 """
 
 import uuid
+from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -16,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.db.models import (
+    AgentEvent,
     Checkpoint,
     FeatureRow,
     HandoffRow,
@@ -23,6 +25,7 @@ from app.db.models import (
     Milestone,
     Mission,
     Need,
+    PersonaBudget,
     Project,
     Run,
 )
@@ -216,7 +219,9 @@ NEED_ACTIONS: dict[str, tuple[str, ...]] = {
     "feature_failed": ("retry", "skip", "stop"),
     "provider_unavailable": ("retry", "stop"),
     "budget_reached": ("raise_budget", "stop"),
+    "persona_budget_reached": ("raise_budget", "skip", "stop"),
 }
+WARN_AT = Decimal("0.8")  # PRD §8.6: a warning at 80% of a budget
 OPEN_STATES = ("awaiting_approval", "running", "paused", "needs_user")
 
 
@@ -365,6 +370,76 @@ async def spent_usd(session: AsyncSession, run_id: uuid.UUID) -> Decimal:
     return Decimal(total or 0)
 
 
+@dataclass(frozen=True)
+class Usage:
+    spent_usd: Decimal
+    tokens_in: int
+    tokens_out: int
+    calls: int
+    unpriced_calls: int  # successful calls whose model has no known price
+
+
+async def usage(session: AsyncSession, run_id: uuid.UUID) -> Usage:
+    """Real totals from the provider layer's `llm_calls` for a mission's run."""
+    row = (
+        await session.execute(
+            select(
+                func.coalesce(func.sum(LLMCall.est_cost_usd), 0),
+                func.coalesce(func.sum(LLMCall.input_tokens), 0),
+                func.coalesce(func.sum(LLMCall.output_tokens), 0),
+                func.count(),
+                func.count().filter(LLMCall.error.is_(None), LLMCall.est_cost_usd.is_(None)),
+            ).where(LLMCall.run_id == run_id)
+        )
+    ).one()
+    return Usage(Decimal(row[0] or 0), int(row[1]), int(row[2]), int(row[3]), int(row[4]))
+
+
+async def persona_spent(session: AsyncSession, run_id: uuid.UUID, persona_id: str) -> Decimal:
+    total = await session.scalar(
+        select(func.coalesce(func.sum(LLMCall.est_cost_usd), 0)).where(
+            LLMCall.run_id == run_id, LLMCall.persona_id == persona_id
+        )
+    )
+    return Decimal(total or 0)
+
+
+async def persona_budget(session: AsyncSession, persona_id: str) -> Decimal | None:
+    return await session.scalar(
+        select(PersonaBudget.budget_usd).where(PersonaBudget.persona_id == persona_id)
+    )
+
+
+async def warn_if_near(
+    session: AsyncSession, mission: Mission, scope: str, spent: Decimal, budget: Decimal
+) -> None:
+    """One `budget_warning` per scope when spending first reaches 80% of the budget."""
+    if budget <= 0 or spent < budget * WARN_AT:
+        return
+    already = await session.scalar(
+        select(func.count())
+        .select_from(AgentEvent)
+        .where(
+            AgentEvent.run_id == mission.run_id,
+            AgentEvent.type == EventType.BUDGET_WARNING.value,
+            AgentEvent.payload["scope"].astext == scope,
+        )
+    )
+    if already:
+        return
+    await append_event(
+        session,
+        mission.run_id,
+        EventType.BUDGET_WARNING,
+        payload={
+            "scope": scope,
+            "spent_usd": float(spent),
+            "budget_usd": float(budget),
+            "percent": int(spent / budget * 100),
+        },
+    )
+
+
 async def settle_cancelled(services: "Services", mission_id: uuid.UUID) -> None:
     """Close the mission's run after a stop (idempotent)."""
     async with services.sessionmaker.begin() as session:
@@ -412,6 +487,14 @@ async def answer_need(
             await set_feature(session, mission, feature, "pending")
         elif action == "skip" and feature is not None:
             await set_feature(session, mission, feature, "skipped")
+        elif action == "raise_budget" and need.kind == "persona_budget_reached":
+            persona_id = str(need.evidence.get("persona_id", ""))
+            spent = await persona_spent(session, mission.run_id, persona_id)
+            if budget_usd is None or budget_usd <= spent:
+                raise InvalidTransition(
+                    f"the new budget must be above the {spent} USD {persona_id} has spent"
+                )
+            await session.merge(PersonaBudget(persona_id=persona_id, budget_usd=budget_usd))
         elif action == "raise_budget":
             spent = await spent_usd(session, mission.run_id)
             if budget_usd is None or budget_usd <= spent:

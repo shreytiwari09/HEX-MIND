@@ -10,7 +10,7 @@ schema_validated) and reserves guardrail_triggered, a2a_message and prompt_varia
 P2/P4. v3 (P2) gives a2a_message the fields both ends of an A2A exchange record. v4 (P3) adds
 the mission events (mission, milestone and feature status, handoffs, checkpoints, Needs you)
 that the Mission Control stream carries. v5 (P4) adds key_rotated, a pool key swapped after a
-rate limit, quota or auth error. Any change
+rate limit, quota or auth error. v6 (P4) adds budget_warning and escalated. Any change
 needs agreement from all owners and bumps SCHEMA_VERSION.
 
 Payloads carry `stub: true` when the work they describe was not really performed (M2 worker
@@ -22,7 +22,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 Complexity = Literal["low", "medium", "high"]
 Framework = Literal["adk", "crewai"]
@@ -68,6 +68,8 @@ class EventType(StrEnum):
     NEED_ANSWERED = "need_answered"
     # v5: model routing (P4)
     KEY_ROTATED = "key_rotated"
+    BUDGET_WARNING = "budget_warning"
+    ESCALATED = "escalated"
 
 
 class Payload(BaseModel):
@@ -306,6 +308,26 @@ class KeyRotated(Payload):
     reason: str
 
 
+class BudgetWarning(Payload):
+    """Spending reached 80% of a budget. `scope` is "mission" or a persona id."""
+
+    scope: str
+    spent_usd: float
+    budget_usd: float
+    percent: int
+
+
+class Escalated(Payload):
+    """A feature's last attempt moved to the persona's escalation model (PRD §10.5)."""
+
+    persona: str
+    feature_id: str
+    attempt: int
+    connection: str
+    model: str
+    reason: str
+
+
 PAYLOADS: dict[EventType, type[Payload]] = {
     EventType.RUN_CREATED: RunCreated,
     EventType.RUN_STATUS_CHANGED: RunStatusChanged,
@@ -343,4 +365,6 @@ PAYLOADS: dict[EventType, type[Payload]] = {
     EventType.NEED_RAISED: NeedRaised,
     EventType.NEED_ANSWERED: NeedAnswered,
     EventType.KEY_ROTATED: KeyRotated,
+    EventType.BUDGET_WARNING: BudgetWarning,
+    EventType.ESCALATED: Escalated,
 }

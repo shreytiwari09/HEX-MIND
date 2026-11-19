@@ -37,6 +37,7 @@ from app.a2a.protocol import PersonaRequest
 from app.agents.mcp_bridge import McpWorkspace
 from app.db.models import (
     CheckResult,
+    Connection,
     FeatureRow,
     HandoffRow,
     LLMCall,
@@ -51,6 +52,7 @@ from app.missions.models import AgentReport, CommandResult, Feature, Handoff
 from app.orchestration.adk import run_adk
 from app.orchestration.run import NO_CHANGES_FEEDBACK, RunStep, _innermost, set_status
 from app.orchestration.services import Services
+from app.providers.assignments import has_escalation, route_for
 from app.sandbox.profile import ProfileError, load_profile
 from app.sandbox.runner import CheckOutcome, accepted, check_feedback
 from app.telemetry.hub import TelemetryHub
@@ -201,7 +203,7 @@ class MissionRunner:
         while True:
             if not await self._running():
                 return "stopped"
-            if await self._budget_reached():
+            if await self._budget_stops(key):
                 return "stopped"
             attempts = await self._attempts(key)
             if attempts >= MAX_ATTEMPTS:
@@ -256,6 +258,8 @@ class MissionRunner:
             await service.sync_mission_folder(session, mission, self.worktree)
         before = await run_in_threadpool(git.head, self.worktree)
 
+        if number >= MAX_ATTEMPTS:
+            await self._note_escalation(feature, number)
         request = PersonaRequest(
             exchange_id=uuid.uuid4(),
             run_id=self.run_id,
@@ -322,6 +326,30 @@ class MissionRunner:
         )
         await self._checkpoint(key, handoff)
         return Attempt("accepted")
+
+    async def _note_escalation(self, feature: Feature, attempt: int) -> None:
+        """Record in the delegation log that this attempt runs on the escalation model."""
+        async with self.services.sessionmaker.begin() as session:
+            if not await has_escalation(session, feature.persona):
+                return  # no escalation model: the attempt repeats the normal route
+            route = await route_for(session, feature.persona, escalate=True)
+            assert route is not None
+            target = route.targets[0]
+            connection = await session.get(Connection, target.connection_id)
+            await append_event(
+                session,
+                self.run_id,
+                EventType.ESCALATED,
+                agent_id=f"{feature.persona}_{attempt:02d}",
+                payload={
+                    "persona": feature.persona,
+                    "feature_id": feature.id,
+                    "attempt": attempt,
+                    "connection": connection.name if connection else "?",
+                    "model": target.model,
+                    "reason": f"attempts 1 to {attempt - 1} were rejected",
+                },
+            )
 
     async def _rejected(self, key: str, feedback: str, detail: str) -> Attempt:
         async with self.services.sessionmaker.begin() as session:
@@ -431,27 +459,70 @@ class MissionRunner:
             sum((Decimal(r[5]) for r in rows), Decimal(0)),
         )
 
-    async def _budget_reached(self) -> bool:
+    async def _budget_stops(self, key: str) -> bool:
+        """Warn at 80% of a budget and stop in Needs you at 100% (PRD §8.6), for the mission as a
+        whole and for the persona about to work. Spending is the real total from llm_calls."""
         async with self.services.sessionmaker.begin() as session:
             mission = await session.get(Mission, self.mission_id)
+            feature = await self._feature(session, key)
             assert mission is not None
-            if mission.budget_usd is None:
-                return False
             spent = await service.spent_usd(session, self.run_id)
-            if spent < mission.budget_usd:
-                return False
-            if await service.set_status(
-                session, self.mission_id, "needs_user", only_from=("running",)
-            ):
-                await service.create_need(
-                    session,
-                    mission,
-                    kind="budget_reached",
-                    summary=f"The mission has spent {spent} USD of its {mission.budget_usd} USD "
-                    "budget.",
-                    evidence={"spent_usd": float(spent), "budget_usd": float(mission.budget_usd)},
+            if mission.budget_usd is not None:
+                if spent >= mission.budget_usd:
+                    await self._stop_for_budget(
+                        session,
+                        mission,
+                        None,
+                        kind="budget_reached",
+                        summary=f"The mission has spent {spent} USD of its "
+                        f"{mission.budget_usd} USD budget.",
+                        evidence={
+                            "spent_usd": float(spent),
+                            "budget_usd": float(mission.budget_usd),
+                        },
+                    )
+                    return True
+                await service.warn_if_near(session, mission, "mission", spent, mission.budget_usd)
+
+            cap = await service.persona_budget(session, feature.persona_id)
+            if cap is not None:
+                persona_spent = await service.persona_spent(
+                    session, self.run_id, feature.persona_id
                 )
-            return True
+                if persona_spent >= cap:
+                    await self._stop_for_budget(
+                        session,
+                        mission,
+                        feature,
+                        kind="persona_budget_reached",
+                        summary=f"{feature.persona_id} has spent {persona_spent} USD of its "
+                        f"{cap} USD budget for this mission.",
+                        evidence={
+                            "persona_id": feature.persona_id,
+                            "spent_usd": float(persona_spent),
+                            "budget_usd": float(cap),
+                        },
+                    )
+                    return True
+                await service.warn_if_near(session, mission, feature.persona_id, persona_spent, cap)
+        return False
+
+    async def _stop_for_budget(
+        self,
+        session,  # type: ignore[no-untyped-def]
+        mission: Mission,
+        feature: FeatureRow | None,
+        *,
+        kind: str,
+        summary: str,
+        evidence: dict,  # type: ignore[type-arg]
+    ) -> None:
+        if await service.set_status(
+            session, self.mission_id, "needs_user", only_from=("running",), reason="budget reached"
+        ):
+            await service.create_need(
+                session, mission, kind=kind, summary=summary, feature=feature, evidence=evidence
+            )
 
     # ---------- Needs you ----------
 

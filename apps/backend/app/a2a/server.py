@@ -197,6 +197,7 @@ class CrewExecutor(AgentExecutor):
                     agent_id=request.agent_id,
                     complexity=request.complexity,
                     route=await self._route(persona, getattr(request, "escalate", False)),
+                    persona_id=persona.id if persona else None,
                 ),
                 purpose=persona.purpose if persona else _crew_purpose(self.role),
                 native_tools=settings.native_tool_calling,

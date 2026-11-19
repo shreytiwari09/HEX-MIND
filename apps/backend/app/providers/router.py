@@ -45,6 +45,8 @@ class CallContext:
     complexity: str | None = None
     # When set, the call goes to this persona route instead of the global provider order.
     route: "Route | None" = None
+    # The persona the call is made for (persona crews), recorded in llm_calls for budgets and costs.
+    persona_id: str | None = None
 
 
 @dataclass
@@ -295,6 +297,7 @@ class ProviderRouter:
                     error=result.error,
                     connection_id=result.connection_id,
                     key_label=result.key_label,
+                    persona_id=ctx.persona_id,
                 )
             )
 

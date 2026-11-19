@@ -251,6 +251,8 @@ class LLMCall(Base):
         "connections.id", nullable=True, ondelete="SET NULL"
     )
     key_label: Mapped[str | None] = mapped_column(String(64))
+    # Which persona the call was made for (persona crews only), to budget and report per persona.
+    persona_id: Mapped[str | None] = mapped_column(String(32), index=True)
     input_tokens: Mapped[int | None] = mapped_column(Integer)
     output_tokens: Mapped[int | None] = mapped_column(Integer)
     latency_ms: Mapped[int] = mapped_column(Integer)
@@ -456,4 +458,15 @@ class ModelAssignment(Base):
     escalate: Mapped[dict[str, Any] | None] = mapped_column()
     set_by: Mapped[str] = mapped_column(String(8), default="user")  # user | auto
     reason: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = _updated_at()
+
+
+class PersonaBudget(Base):
+    """The most a persona may spend in one mission (PRD §11.1). Independent of which model the
+    persona uses; a persona without a row has no cap of its own."""
+
+    __tablename__ = "persona_budgets"
+
+    persona_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    budget_usd: Mapped[Decimal] = mapped_column(Numeric(10, 4))
     updated_at: Mapped[datetime] = _updated_at()

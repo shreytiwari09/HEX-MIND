@@ -135,7 +135,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -238,7 +238,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -340,7 +340,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -378,6 +378,97 @@
         "payload"
       ],
       "title": "AgentStartedEvent",
+      "type": "object"
+    },
+    "BudgetWarning": {
+      "additionalProperties": false,
+      "description": "Spending reached 80% of a budget. `scope` is \"mission\" or a persona id.",
+      "properties": {
+        "budget_usd": {
+          "type": "number"
+        },
+        "percent": {
+          "type": "integer"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "spent_usd": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "scope",
+        "spent_usd",
+        "budget_usd",
+        "percent"
+      ],
+      "title": "BudgetWarning",
+      "type": "object"
+    },
+    "BudgetWarningEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "event_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/BudgetWarning"
+        },
+        "run_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 6,
+          "type": "integer"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "task_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ts": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "type": {
+          "const": "budget_warning",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "event_id",
+        "run_id",
+        "seq",
+        "ts",
+        "agent_id",
+        "task_id",
+        "type",
+        "payload"
+      ],
+      "title": "BudgetWarningEvent",
       "type": "object"
     },
     "CallbackFired": {
@@ -443,7 +534,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -543,7 +634,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -621,7 +712,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -715,7 +806,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -796,7 +887,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -834,6 +925,105 @@
         "payload"
       ],
       "title": "DiffReadyEvent",
+      "type": "object"
+    },
+    "Escalated": {
+      "additionalProperties": false,
+      "description": "A feature's last attempt moved to the persona's escalation model (PRD \u00a710.5).",
+      "properties": {
+        "attempt": {
+          "type": "integer"
+        },
+        "connection": {
+          "type": "string"
+        },
+        "feature_id": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "persona": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "persona",
+        "feature_id",
+        "attempt",
+        "connection",
+        "model",
+        "reason"
+      ],
+      "title": "Escalated",
+      "type": "object"
+    },
+    "EscalatedEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "event_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/Escalated"
+        },
+        "run_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 6,
+          "type": "integer"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "task_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ts": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "type": {
+          "const": "escalated",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "event_id",
+        "run_id",
+        "seq",
+        "ts",
+        "agent_id",
+        "task_id",
+        "type",
+        "payload"
+      ],
+      "title": "EscalatedEvent",
       "type": "object"
     },
     "FeatureStatusChanged": {
@@ -902,7 +1092,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -993,7 +1183,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -1098,7 +1288,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -1189,7 +1379,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -1341,7 +1531,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -1406,7 +1596,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -1492,7 +1682,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -1594,7 +1784,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -1676,7 +1866,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -1781,7 +1971,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -1863,7 +2053,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -1949,7 +2139,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -2037,7 +2227,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -2115,7 +2305,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -2237,7 +2427,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -2323,7 +2513,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -2414,7 +2604,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -2516,7 +2706,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -2594,7 +2784,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -2689,7 +2879,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -2788,7 +2978,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -2866,7 +3056,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -2944,7 +3134,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -3030,7 +3220,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -3141,7 +3331,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -3219,7 +3409,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -3297,7 +3487,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -3392,7 +3582,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 5,
+          "const": 6,
           "type": "integer"
         },
         "seq": {
@@ -3433,17 +3623,19 @@
       "type": "object"
     }
   },
-  "description": "H.E.X Mind agent event, schema version 5.",
+  "description": "H.E.X Mind agent event, schema version 6.",
   "discriminator": {
     "mapping": {
       "a2a_message": "#/$defs/A2AMessageEvent",
       "agent_finished": "#/$defs/AgentFinishedEvent",
       "agent_started": "#/$defs/AgentStartedEvent",
+      "budget_warning": "#/$defs/BudgetWarningEvent",
       "callback_fired": "#/$defs/CallbackFiredEvent",
       "check_completed": "#/$defs/CheckCompletedEvent",
       "check_started": "#/$defs/CheckStartedEvent",
       "checkpoint_created": "#/$defs/CheckpointCreatedEvent",
       "diff_ready": "#/$defs/DiffReadyEvent",
+      "escalated": "#/$defs/EscalatedEvent",
       "feature_status_changed": "#/$defs/FeatureStatusChangedEvent",
       "guardrail_triggered": "#/$defs/GuardrailTriggeredEvent",
       "handoff_recorded": "#/$defs/HandoffRecordedEvent",
@@ -3583,6 +3775,12 @@
     },
     {
       "$ref": "#/$defs/KeyRotatedEvent"
+    },
+    {
+      "$ref": "#/$defs/BudgetWarningEvent"
+    },
+    {
+      "$ref": "#/$defs/EscalatedEvent"
     }
   ],
   "title": "AgentEvent"

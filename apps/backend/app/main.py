@@ -12,6 +12,7 @@ from app.a2a.client import CrewServiceProcess, a2a_http_client
 from app.api import (
     a2a,
     assignments,
+    budgets,
     catalog,
     connections,
     conversations,
@@ -114,6 +115,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         missions,
         connections,
         assignments,
+        budgets,
         catalog,
     ):
         app.include_router(module.router, prefix="/api", dependencies=[Depends(require_token)])

@@ -126,6 +126,14 @@ export function describeEvent(event: AgentEvent): string {
       const p = event.payload
       return `${p.connection}: ${p.from_key} → ${p.to_key} (${p.reason})`
     }
+    case 'budget_warning': {
+      const p = event.payload
+      return `${p.scope === 'mission' ? 'the mission' : p.scope} has used ${p.percent}% of its budget ($${p.spent_usd.toFixed(2)} of $${p.budget_usd.toFixed(2)})`
+    }
+    case 'escalated': {
+      const p = event.payload
+      return `${p.persona}, attempt ${p.attempt}: escalated to ${p.model} on ${p.connection} (${p.reason})`
+    }
     case 'need_answered':
       return `answered: ${event.payload.action.replace('_', ' ')}`
     default:
