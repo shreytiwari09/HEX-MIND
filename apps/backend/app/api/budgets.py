@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app.agents.persona import builtin_personas
+from app.agents.persona import all_personas
 from app.api.deps import SessionDep
 from app.db.models import PersonaBudget
 
@@ -30,7 +30,7 @@ async def list_budgets(session: SessionDep) -> list[BudgetOut]:
 
 @router.put("/{persona_id}", response_model=BudgetOut)
 async def set_budget(persona_id: str, body: BudgetIn, session: SessionDep) -> BudgetOut:
-    if persona_id not in builtin_personas():
+    if persona_id not in all_personas():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "persona not found")
     await session.merge(PersonaBudget(persona_id=persona_id, budget_usd=body.budget_usd))
     return BudgetOut(persona_id=persona_id, budget_usd=float(body.budget_usd))

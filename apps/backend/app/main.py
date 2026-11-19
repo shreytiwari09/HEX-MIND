@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.a2a.client import CrewServiceProcess, a2a_http_client
+from app.agents import store as persona_store
 from app.api import (
     a2a,
     assignments,
@@ -71,6 +72,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        async with sessionmaker() as session:
+            await persona_store.refresh(session)  # the user's edited and custom personas
         if settings.catalog_auto_refresh:
             services.background.spawn(model_catalog.refresh_if_stale(), name="catalog-refresh")
         if settings.crew_service_autostart:

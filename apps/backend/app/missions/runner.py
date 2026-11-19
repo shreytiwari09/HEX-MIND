@@ -324,6 +324,10 @@ class MissionRunner:
             started = await session.scalar(select(func.clock_timestamp()))
             await service.sync_mission_folder(session, mission, self.worktree)
         before = await run_in_threadpool(git.head, self.worktree)
+        try:
+            persona = get_persona(feature.persona)  # as the user has it now (edits, custom)
+        except UnknownPersona:
+            raise MissionAborted(f"the persona '{feature.persona}' no longer exists") from None
 
         if number >= MAX_ATTEMPTS:
             await self._note_escalation(feature, number)
@@ -334,6 +338,7 @@ class MissionRunner:
             worktree=str(self.worktree),
             workspace=str(self.workspace),
             persona_id=feature.persona,
+            persona=persona,
             feature=feature,
             earlier_handoffs=earlier,
             feedback=feedback,
@@ -395,6 +400,7 @@ class MissionRunner:
             tokens_out=tokens_out,
             cost_usd=float(cost),
             skills=await self._skills_used(feature, request.agent_id, started),
+            persona_version=persona.version,
         )
         await self._checkpoint(key, handoff)
         return Attempt("accepted")

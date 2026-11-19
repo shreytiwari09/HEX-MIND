@@ -86,6 +86,7 @@ class Handoff(AgentReport):
     tokens_out: int = 0
     cost_usd: float = 0.0
     skills: list[SkillUse] = Field(default_factory=list)
+    persona_version: int = 1  # the version of the persona that did the work
 
     @classmethod
     def assemble(
@@ -100,6 +101,7 @@ class Handoff(AgentReport):
         tokens_out: int,
         cost_usd: float,
         skills: list[SkillUse] | None = None,
+        persona_version: int = 1,
     ) -> "Handoff":
         """Combine the agent's report with measured facts. The agent's own claims about files
         or commands are not part of `AgentReport`, so they cannot leak into the measured fields."""
@@ -114,6 +116,7 @@ class Handoff(AgentReport):
             tokens_out=tokens_out,
             cost_usd=cost_usd,
             skills=skills or [],
+            persona_version=persona_version,
         )
 
 
@@ -161,9 +164,9 @@ class MissionPlan(BaseModel):
 
     @model_validator(mode="after")
     def _check(self) -> "MissionPlan":
-        from app.agents.persona import builtin_personas
+        from app.agents.persona import all_personas
 
-        personas = builtin_personas()
+        personas = all_personas()
         milestone_ids = [m.id for m in self.milestones]
         feature_ids = [f.id for m in self.milestones for f in m.features]
         criterion_ids = [c.id for c in self.validation_contract]

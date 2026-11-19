@@ -3,11 +3,12 @@
 A persona is a profile, not code. Every job builds a fresh agent from one persona (see
 `agents.build.build_agent`); personas share the same worker or validator code underneath.
 
-Built-in personas are YAML files in `agents/personas/`. User-created personas (stored in
-Postgres, versioned) arrive in P6. `model` is the persona's model assignment; resolving it to a
-real connection and model is P4, so until then every call goes through the ProviderRouter's
-global provider order. `skills` and `plugins` are names that the P6 registries resolve; nothing
-loads them yet.
+Built-in personas are YAML files in `agents/personas/`. A user can edit a built-in persona or
+create a custom one (stored in Postgres, every edit a new version, see `agents/store.py`); the
+stored ones overlay the built-in ones in this process (`set_overrides`). The crew service does not
+read the database: each job it gets carries a snapshot of its persona. `model` is the persona's
+model assignment (resolved in P4 from `model_assignments`). `skills` are names the skill registry
+resolves (`skills/registry.py`); `plugins` are for the plugin manager.
 """
 
 from functools import lru_cache
@@ -72,8 +73,23 @@ def builtin_personas() -> dict[str, Persona]:
     return {persona.id: persona for persona in personas}
 
 
+_overrides: dict[str, Persona] = {}
+
+
+def set_overrides(personas: dict[str, Persona]) -> None:
+    """The user's edited and custom personas, from the database (set at startup and after every
+    change). They take precedence over the built-in ones with the same id."""
+    global _overrides
+    _overrides = dict(personas)
+
+
+def all_personas() -> dict[str, Persona]:
+    """Every persona now: the built-in ones, with the user's edits and custom ones on top."""
+    return {**builtin_personas(), **_overrides}
+
+
 def get_persona(persona_id: str) -> Persona:
     try:
-        return builtin_personas()[persona_id]
+        return all_personas()[persona_id]
     except KeyError:
         raise UnknownPersona(persona_id) from None

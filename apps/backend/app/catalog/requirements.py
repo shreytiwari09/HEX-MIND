@@ -25,3 +25,19 @@ class Requirements(BaseModel):
 @lru_cache(maxsize=1)
 def load_requirements(path: Path = REQUIREMENTS_FILE) -> Requirements:
     return Requirements.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+
+
+# What a persona the user created needs: it is a worker, so it is judged like one.
+CUSTOM_WORKER = RoleRequirement(
+    min={"coding": 4, "tool_use": 4}, focus=["coding", "tool_use"], critical=False
+)
+
+
+def requirements_with_custom() -> Requirements:
+    """The shipped requirements, plus the worker default for every persona that has none
+    (the ones the user created)."""
+    from app.agents.persona import all_personas
+
+    base = load_requirements()
+    extra = {pid: CUSTOM_WORKER for pid in all_personas() if pid not in base.roles}
+    return Requirements(roles={**base.roles, **extra})

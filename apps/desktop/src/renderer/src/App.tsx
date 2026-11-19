@@ -27,6 +27,10 @@ import { ModelsScreen, type ModelsTab } from './features/models/ModelsScreen'
 import { MissionControl } from './features/missions/MissionControl'
 import { MissionList } from './features/missions/MissionList'
 import { NewMission } from './features/missions/NewMission'
+import { NewPersona } from './features/agents/NewPersona'
+import { PersonaEditor } from './features/agents/PersonaEditor'
+import { PersonaList } from './features/agents/PersonaList'
+import { useTeam } from './features/agents/useTeam'
 import { ProvidersPanel } from './features/settings/ProvidersPanel'
 import { DiffView } from './features/runs/DiffView'
 import { RunEventsPanel } from './features/runs/RunEventsPanel'
@@ -51,8 +55,7 @@ const VIEWS: { id: View; label: string; icon: LucideIcon }[] = [
 const BOTTOM_TABS = ['Problems', 'Tasks', 'Agent Events', 'Logs'] as const
 type BottomTab = (typeof BOTTOM_TABS)[number]
 
-const SIDEBAR_EMPTY: Record<Exclude<View, 'explorer' | 'missions' | 'models' | 'observability' | 'runs'>, string> = {
-  agents: 'No agents running',
+const SIDEBAR_EMPTY: Record<Exclude<View, 'explorer' | 'missions' | 'models' | 'observability' | 'agents' | 'runs'>, string> = {
   settings: ''
 }
 
@@ -73,6 +76,9 @@ export function App() {
   const [diffRunId, setDiffRunId] = useState<string | null>(null)
   const [selectedMissionId, setSelectedMissionId] = useState<string | null>(null)
   const [creatingMission, setCreatingMission] = useState(false)
+  const team = useTeam(api)
+  const [selectedPersonaId, setSelectedPersonaId] = useState<string | null>(null)
+  const [creatingPersona, setCreatingPersona] = useState(false)
   const [missionsRefresh, setMissionsRefresh] = useState(0)
   const [modelsTab, setModelsTab] = useState<ModelsTab>('connections')
 
@@ -237,6 +243,16 @@ export function App() {
                 }}
                 onNew={() => setCreatingMission(true)}
               />
+            ) : view === 'agents' ? (
+              <PersonaList
+                team={team}
+                selectedId={selectedPersonaId}
+                onSelect={(id) => {
+                  setCreatingPersona(false)
+                  setSelectedPersonaId(id)
+                }}
+                onNew={() => setCreatingPersona(true)}
+              />
             ) : view === 'observability' || view === 'runs' ? (
               <RunList
                 api={api}
@@ -278,6 +294,27 @@ export function App() {
             />
           ) : (
             <EmptyState title={project ? 'Pick a mission, or start a new one' : 'Open a workspace to start a mission'} />
+          )
+        ) : view === 'agents' ? (
+          creatingPersona ? (
+            <NewPersona
+              api={api}
+              team={team}
+              onCancel={() => setCreatingPersona(false)}
+              onCreated={(persona) => {
+                setCreatingPersona(false)
+                setSelectedPersonaId(persona.id)
+              }}
+            />
+          ) : team.personas.find((p) => p.id === selectedPersonaId) ? (
+            <PersonaEditor
+              api={api}
+              team={team}
+              persona={team.personas.find((p) => p.id === selectedPersonaId)!}
+              onRemoved={() => setSelectedPersonaId(null)}
+            />
+          ) : (
+            <EmptyState title="Pick a team member to edit, or add a new one" />
           )
         ) : view === 'observability' ? (
           <ObservabilityView api={api} runId={selectedRunId} />

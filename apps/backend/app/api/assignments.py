@@ -8,10 +8,10 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from app.agents.persona import builtin_personas
+from app.agents.persona import all_personas
 from app.api.deps import ServicesDep, SessionDep
 from app.catalog.assigner import Pick, Preset, assign
-from app.catalog.requirements import load_requirements
+from app.catalog.requirements import requirements_with_custom
 from app.db.models import ModelAssignment
 from app.providers import assignments
 from app.providers.assignments import AssignmentError, AssignmentIn, ModelRef
@@ -49,7 +49,7 @@ async def list_assignments(session: SessionDep) -> list[AssignmentOut]:
 
 @router.put("/{persona_id}", response_model=AssignmentOut)
 async def put_assignment(persona_id: str, body: AssignmentIn, session: SessionDep) -> AssignmentOut:
-    if persona_id not in builtin_personas():
+    if persona_id not in all_personas():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "persona not found")
     try:
         return _out(await assignments.set_assignment(session, persona_id, body))
@@ -101,8 +101,8 @@ async def auto_assign(body: AutoRequest, session: SessionDep, services: Services
     one-line reason each. Auto never overwrites a persona you set yourself unless asked."""
     assert services.catalog is not None
     entries = await services.catalog.entries(session)
-    persona_ids = sorted(builtin_personas())
-    proposals = assign(persona_ids, entries, body.preset, load_requirements())
+    persona_ids = sorted(all_personas())
+    proposals = assign(persona_ids, entries, body.preset, requirements_with_custom())
     existing = {row.persona_id: row for row in await session.scalars(select(ModelAssignment))}
 
     out: list[ProposalOut] = []

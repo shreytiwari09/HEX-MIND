@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app.agents.persona import builtin_personas
+from app.agents.persona import all_personas
 from app.api.deps import SettingsDep
 from app.skills.registry import SkillRegistry
 
@@ -16,7 +16,7 @@ class SkillOut(BaseModel):
     source: str  # builtin | user
     version: str  # name@<hash prefix>: recorded on every handoff
     files: list[str]
-    personas: list[str]  # built-in personas that list it
+    personas: list[str]  # personas that list it
 
 
 class SkillsOut(BaseModel):
@@ -29,7 +29,7 @@ class SkillsOut(BaseModel):
 async def list_skills(settings: SettingsDep) -> SkillsOut:
     skills, problems = SkillRegistry(settings.data_dir / "skills").load()
     owners: dict[str, list[str]] = {}
-    for persona in builtin_personas().values():
+    for persona in all_personas().values():
         for name in persona.skills:
             owners.setdefault(name, []).append(persona.id)
     return SkillsOut(

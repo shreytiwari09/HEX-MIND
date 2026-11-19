@@ -335,6 +335,37 @@ class Mission(Base):
     validation_contract: Mapped[list[Any]] = mapped_column(default=list)
 
 
+class PersonaRow(Base):
+    """A persona the user edited (a built-in one) or created. It overlays the built-in YAML
+    persona with the same id; deleting the row resets a built-in persona to its default."""
+
+    __tablename__ = "personas"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    kind: Mapped[str] = mapped_column(String(16))
+    instructions: Mapped[str] = mapped_column(Text)
+    skills: Mapped[list[Any]] = mapped_column(default=list)
+    plugins: Mapped[list[Any]] = mapped_column(default=list)
+    version: Mapped[int] = mapped_column(Integer)
+    builtin: Mapped[bool] = mapped_column(Boolean, default=False)  # edits a built-in persona
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
+class PersonaVersion(Base):
+    """Every version a persona has had, so an old mission's behaviour can be explained."""
+
+    __tablename__ = "persona_versions"
+    __table_args__ = (UniqueConstraint("persona_id", "version"),)
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    persona_id: Mapped[str] = mapped_column(String(32), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    snapshot: Mapped[dict[str, Any]] = mapped_column()  # name, kind, instructions, skills, plugins
+    created_at: Mapped[datetime] = _created_at()
+
+
 class ScopingSession(Base):
     """The PM scoping chat for a new mission (PRD F2): the conversation, then the plan it
     produced, which the user may edit before it becomes a mission. Its run collects the PM's

@@ -25,7 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.adk_llm import HexAdkLlm
-from app.agents.persona import builtin_personas, get_persona
+from app.agents.persona import all_personas, get_persona
 from app.config import Settings
 from app.db.models import Mission, Project, Run, ScopingSession
 from app.events.log import EventType, append_event
@@ -109,7 +109,7 @@ def project_context(workspace: Path) -> str:
 
 
 def _team() -> str:
-    personas = builtin_personas()
+    personas = all_personas()
     workers = [p for p in personas.values() if p.kind == "worker"]
     validators = [p for p in personas.values() if p.kind == "validator"]
 

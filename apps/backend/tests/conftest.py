@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from alembic import command
 from app.a2a.client import a2a_http_client
 from app.a2a.server import build_crew_app
+from app.agents.persona import set_overrides
 from app.config import Settings
 from app.db.models import Base
 from app.main import create_app
@@ -85,7 +86,9 @@ async def app(migrated_database: str, settings: Settings) -> AsyncIterator[FastA
     tables = ", ".join(t.name for t in Base.metadata.sorted_tables)
     async with app.state.engine.begin() as conn:
         await conn.execute(text(f"TRUNCATE {tables} CASCADE"))
+    set_overrides({})  # no edited or custom personas leak between tests
     yield app
+    set_overrides({})
     await app.state.event_hub.stop()
     await services.a2a_http.aclose()
     await app.state.engine.dispose()

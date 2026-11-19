@@ -44,7 +44,7 @@ from app.agents import roles
 from app.agents.build import build_agent, feature_prompt, tool_names_for
 from app.agents.llm import HexLLM
 from app.agents.mcp_bridge import McpWorkspace
-from app.agents.persona import UnknownPersona, get_persona
+from app.agents.persona import Persona, UnknownPersona, get_persona
 from app.agents.tools import CODER, READ_ONLY, make_tools, tool_summary
 from app.context.repo_map import build_repo_map
 from app.events.log import EventType
@@ -195,9 +195,7 @@ class CrewExecutor(AgentExecutor):
         await run_in_threadpool(mcp.start)
         try:
             loop = asyncio.get_running_loop()
-            persona = (
-                get_persona(request.persona_id) if isinstance(request, PersonaRequest) else None
-            )
+            persona = _persona_for(request) if isinstance(request, PersonaRequest) else None
             llm = HexLLM(
                 router=self.services.providers,
                 loop=loop,
@@ -300,13 +298,23 @@ def _write_only_for(request: CrewRequest) -> tuple[str, ...]:
     return ()
 
 
+def _persona_for(request: PersonaRequest) -> Persona:
+    """The persona a job runs as: the snapshot the orchestrator sent (it may be edited or
+    custom), else the built-in one. Raises UnknownPersona."""
+    if request.persona is not None:
+        if request.persona.id != request.persona_id:
+            raise UnknownPersona(request.persona_id)
+        return request.persona
+    return get_persona(request.persona_id)
+
+
 def _offered_skills(registry: SkillRegistry, request: CrewRequest) -> list[Skill]:
     """The skills a persona is offered for this feature: its own plus the feature's extras,
     keeping only those that exist and are valid."""
     if not isinstance(request, PersonaRequest):
         return []
     try:
-        persona = get_persona(request.persona_id)
+        persona = _persona_for(request)
     except UnknownPersona:
         return []  # the job fails with a clear error further on
     found, _ = registry.resolve([*persona.skills, *request.feature.extra_skills])

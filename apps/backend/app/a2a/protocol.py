@@ -13,6 +13,7 @@ from opentelemetry import propagate, trace
 from pydantic import BaseModel, Field
 
 from app.agents.build import REPORT_EXPECTED
+from app.agents.persona import Persona
 from app.missions.models import Feature, Handoff
 
 # `planner` and `coder` are the fixed crews of the run workflow. `persona` serves any persona
@@ -48,6 +49,9 @@ class PersonaRequest(CrewRequest):
     The crew service builds the prompt itself from these fields."""
 
     persona_id: str
+    # The persona as the orchestrator has it now (the user may have edited it or made it): the
+    # crew service has no database. Without it the built-in persona is used.
+    persona: Persona | None = None
     feature: Feature
     earlier_handoffs: list[Handoff] = Field(default_factory=list)
     # The exact findings of a rejected attempt, for the retry (PRD §8.6).
