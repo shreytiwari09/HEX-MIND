@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+.venv/
+
+# Build output
+out/
+dist/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Secrets: commit .env.example only
+.env
+.env.*
+!.env.example
+
+# Claude Code local settings (per machine)
+.claude/settings.local.json
+
+# Editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
