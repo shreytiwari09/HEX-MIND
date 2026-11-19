@@ -22,6 +22,8 @@ const MILESTONE_LABEL: Record<MilestoneStatus, string> = {
   pending: 'Waiting',
   active: 'In progress',
   completed: 'Features done',
+  passed: 'Validated',
+  accepted: 'Accepted by you',
   failed: 'Failed'
 }
 

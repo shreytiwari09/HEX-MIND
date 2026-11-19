@@ -72,7 +72,7 @@ class RunOut(ORMModel):
 
 
 class EventOut(ORMModel):
-    schema_version: Literal[6] = 6
+    schema_version: Literal[7] = 7
     event_id: uuid.UUID = Field(validation_alias="id")
     run_id: uuid.UUID
     seq: int

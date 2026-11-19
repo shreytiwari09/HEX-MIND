@@ -135,7 +135,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -238,7 +238,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -340,7 +340,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -431,7 +431,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -534,7 +534,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -634,7 +634,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -712,7 +712,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -806,7 +806,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -887,7 +887,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -986,7 +986,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -1092,7 +1092,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -1183,7 +1183,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -1288,7 +1288,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -1379,7 +1379,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -1531,7 +1531,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -1596,7 +1596,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -1682,7 +1682,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -1784,7 +1784,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -1866,7 +1866,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -1971,7 +1971,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -2053,7 +2053,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -2139,7 +2139,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -2227,7 +2227,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -2305,7 +2305,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -2427,7 +2427,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -2513,7 +2513,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -2604,7 +2604,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -2706,7 +2706,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -2784,7 +2784,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -2879,7 +2879,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -2978,7 +2978,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -3056,7 +3056,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -3134,7 +3134,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -3220,7 +3220,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -3331,7 +3331,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -3409,7 +3409,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -3487,7 +3487,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -3582,7 +3582,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 6,
+          "const": 7,
           "type": "integer"
         },
         "seq": {
@@ -3621,9 +3621,198 @@
       ],
       "title": "ToolCalledEvent",
       "type": "object"
+    },
+    "ValidatorReported": {
+      "additionalProperties": false,
+      "properties": {
+        "blocking": {
+          "type": "integer"
+        },
+        "findings": {
+          "type": "integer"
+        },
+        "milestone_id": {
+          "type": "string"
+        },
+        "round": {
+          "type": "integer"
+        },
+        "validator": {
+          "type": "string"
+        },
+        "verdict": {
+          "enum": [
+            "pass",
+            "fail",
+            "needs_user"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "validator",
+        "milestone_id",
+        "round",
+        "verdict",
+        "findings",
+        "blocking"
+      ],
+      "title": "ValidatorReported",
+      "type": "object"
+    },
+    "ValidatorReportedEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "event_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/ValidatorReported"
+        },
+        "run_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 7,
+          "type": "integer"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "task_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ts": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "type": {
+          "const": "validator_reported",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "event_id",
+        "run_id",
+        "seq",
+        "ts",
+        "agent_id",
+        "task_id",
+        "type",
+        "payload"
+      ],
+      "title": "ValidatorReportedEvent",
+      "type": "object"
+    },
+    "ValidatorStarted": {
+      "additionalProperties": false,
+      "properties": {
+        "milestone_id": {
+          "type": "string"
+        },
+        "round": {
+          "type": "integer"
+        },
+        "validator": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "validator",
+        "milestone_id",
+        "round"
+      ],
+      "title": "ValidatorStarted",
+      "type": "object"
+    },
+    "ValidatorStartedEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "event_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/ValidatorStarted"
+        },
+        "run_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 7,
+          "type": "integer"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "task_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ts": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "type": {
+          "const": "validator_started",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "event_id",
+        "run_id",
+        "seq",
+        "ts",
+        "agent_id",
+        "task_id",
+        "type",
+        "payload"
+      ],
+      "title": "ValidatorStartedEvent",
+      "type": "object"
     }
   },
-  "description": "H.E.X Mind agent event, schema version 6.",
+  "description": "H.E.X Mind agent event, schema version 7.",
   "discriminator": {
     "mapping": {
       "a2a_message": "#/$defs/A2AMessageEvent",
@@ -3663,7 +3852,9 @@
       "task_created": "#/$defs/TaskCreatedEvent",
       "task_failed": "#/$defs/TaskFailedEvent",
       "task_started": "#/$defs/TaskStartedEvent",
-      "tool_called": "#/$defs/ToolCalledEvent"
+      "tool_called": "#/$defs/ToolCalledEvent",
+      "validator_reported": "#/$defs/ValidatorReportedEvent",
+      "validator_started": "#/$defs/ValidatorStartedEvent"
     },
     "propertyName": "type"
   },
@@ -3781,6 +3972,12 @@
     },
     {
       "$ref": "#/$defs/EscalatedEvent"
+    },
+    {
+      "$ref": "#/$defs/ValidatorStartedEvent"
+    },
+    {
+      "$ref": "#/$defs/ValidatorReportedEvent"
     }
   ],
   "title": "AgentEvent"

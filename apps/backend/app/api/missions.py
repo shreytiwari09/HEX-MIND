@@ -19,6 +19,7 @@ from app.db.models import (
     Need,
     PersonaBudget,
     Project,
+    ValidatorReportRow,
 )
 from app.events.schema import EventType
 from app.missions import lifecycle, service
@@ -569,3 +570,41 @@ async def mission_delegation(mission_id: uuid.UUID, session: SessionDep) -> Dele
     return DelegationOut(
         assignments=assignments, events=[EventOut.model_validate(e) for e in events]
     )
+
+
+# ---------- validation (PRD §8.5) ----------
+
+
+class ValidatorReportOut(BaseModel):
+    milestone_id: str
+    validator: str
+    round: int
+    verdict: str
+    findings: list[dict]  # type: ignore[type-arg]
+    commands: list[dict]  # type: ignore[type-arg]
+    created_at: datetime
+
+
+@router.get("/{mission_id}/validation", response_model=list[ValidatorReportOut])
+async def mission_validation(
+    mission_id: uuid.UUID, session: SessionDep
+) -> list[ValidatorReportOut]:
+    """What each validator found at the end of each milestone, oldest first."""
+    await _get(session, mission_id)
+    rows = await session.scalars(
+        select(ValidatorReportRow)
+        .where(ValidatorReportRow.mission_id == mission_id)
+        .order_by(ValidatorReportRow.created_at)
+    )
+    return [
+        ValidatorReportOut(
+            milestone_id=r.data["milestone_id"],
+            validator=r.validator,
+            round=r.round,
+            verdict=r.verdict,
+            findings=r.data["findings"],
+            commands=r.data["commands"],
+            created_at=r.created_at,
+        )
+        for r in rows
+    ]

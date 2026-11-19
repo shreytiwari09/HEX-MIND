@@ -15,7 +15,9 @@ export type MissionStatus =
   | 'failed'
 
 export type FeatureStatus = 'pending' | 'in_progress' | 'done' | 'failed' | 'skipped'
-export type MilestoneStatus = 'pending' | 'active' | 'completed' | 'failed'
+// completed: every feature is done. passed: every required validator passed it. failed: validators
+// still found problems after the team's fixes. accepted: you chose to go on despite that.
+export type MilestoneStatus = 'pending' | 'active' | 'completed' | 'passed' | 'failed' | 'accepted'
 
 export interface MissionFeature {
   id: string
@@ -71,7 +73,13 @@ export interface Need {
   id: string
   mission_id: string
   feature_id: string | null
-  kind: 'feature_failed' | 'provider_unavailable' | 'budget_reached' | 'persona_budget_reached'
+  kind:
+    | 'feature_failed'
+    | 'provider_unavailable'
+    | 'budget_reached'
+    | 'persona_budget_reached'
+    | 'milestone_failed'
+    | 'validator_unavailable'
   summary: string
   evidence: Record<string, unknown>
   options: string[]
@@ -144,4 +152,23 @@ export interface Delegation {
   assignments: DelegationAssignment[]
   /** Fallbacks, key rotations, escalations, budget warnings and Needs-you items, oldest first. */
   events: import('../../generated/events').AgentEvent[]
+}
+
+export interface ValidatorFinding {
+  feature_id: string | null
+  file: string | null
+  line: number | null
+  severity: 'info' | 'minor' | 'major' | 'critical'
+  message: string
+  evidence: string | null
+}
+
+export interface ValidatorReportView {
+  milestone_id: string
+  validator: string
+  round: number
+  verdict: 'pass' | 'fail' | 'needs_user'
+  findings: ValidatorFinding[]
+  commands: { command: string; exit_code: number; duration_s: number; summary: string }[]
+  created_at: string
 }

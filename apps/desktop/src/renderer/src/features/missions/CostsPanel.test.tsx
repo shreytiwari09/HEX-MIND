@@ -6,7 +6,7 @@ import type { ApiClient } from '../../lib/api'
 import { CostsPanel } from './CostsPanel'
 import type { Costs, Delegation } from './types'
 
-const base = { schema_version: 6 as const, event_id: 'e', run_id: 'r1', ts: '2026-11-19T10:00:00Z', agent_id: null, task_id: null }
+const base = { schema_version: 7 as const, event_id: 'e', run_id: 'r1', ts: '2026-11-19T10:00:00Z', agent_id: null, task_id: null }
 
 const COSTS: Costs = {
   total_usd: 2.35,

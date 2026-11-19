@@ -45,10 +45,19 @@ from app.db.models import (
     Mission,
     Project,
     Run,
+    ValidatorReportRow,
 )
 from app.events.log import EventType, append_event
-from app.missions import service
-from app.missions.models import AgentReport, CommandResult, Feature, Handoff
+from app.missions import folder, service
+from app.missions.models import (
+    AgentReport,
+    CommandResult,
+    Feature,
+    Finding,
+    Handoff,
+    ValidatorReport,
+)
+from app.missions.validators import VALIDATORS, FeatureSnap, ValidationContext
 from app.orchestration.adk import run_adk
 from app.orchestration.run import NO_CHANGES_FEEDBACK, RunStep, _innermost, set_status
 from app.orchestration.services import Services
@@ -65,6 +74,8 @@ MAX_ATTEMPTS = 3  # the first try and two retries (PRD §8.6)
 CHECK_NAME = "test"
 # Run after every feature, in this order, when the project defines them (PRD §8.4 step 7).
 QUICK_CHECKS = ("typecheck", CHECK_NAME)
+# Validators find problems, the builder fixes them, validators look again: at most this often.
+MAX_VALIDATION_ROUNDS = 2
 OUTPUT_IN_HANDOFF = 1500
 PROVIDER_FAILURE_MARKER = "ProviderCallFailed"  # raised by HexLLM once the router gave up
 
@@ -138,11 +149,17 @@ class MissionRunner:
         await self._back_to_last_checkpoint()
 
         for milestone_id in await self._milestone_ids():
-            await self._set_milestone(milestone_id, "active")
-            for key in await self._open_feature_keys(milestone_id):
-                if await self._build_feature(key) != "done":
-                    return await self._settle()
-            await self._set_milestone(milestone_id, "completed")
+            status = await self._milestone_status(milestone_id)
+            if status in ("passed", "accepted"):
+                continue
+            if status not in ("completed", "failed"):  # features still to build
+                await self._set_milestone(milestone_id, "active")
+                for key in await self._open_feature_keys(milestone_id):
+                    if await self._build_feature(key) != "done":
+                        return await self._settle()
+                await self._set_milestone(milestone_id, "completed")
+            if await self._validate(milestone_id) != "ok":
+                return await self._settle()
         await self._complete()
 
     async def _back_to_last_checkpoint(self) -> None:
@@ -187,6 +204,12 @@ class MissionRunner:
                 )
             )
 
+    async def _milestone_status(self, milestone_id: uuid.UUID) -> str:
+        async with self.services.sessionmaker() as session:
+            milestone = await session.get(Milestone, milestone_id)
+            assert milestone is not None
+            return milestone.status
+
     async def _set_milestone(self, milestone_id: uuid.UUID, status: str) -> None:
         async with self.services.sessionmaker.begin() as session:
             milestone = await session.get(Milestone, milestone_id)
@@ -205,8 +228,10 @@ class MissionRunner:
 
     # ---------- one feature ----------
 
-    async def _build_feature(self, key: str) -> Literal["done", "stopped"]:
-        feedback: str | None = None
+    async def _build_feature(
+        self, key: str, feedback: str | None = None
+    ) -> Literal["done", "stopped"]:
+        """Build one feature, retrying with findings. `feedback` starts a validator's findings."""
         while True:
             if not await self._running():
                 return "stopped"
@@ -599,6 +624,225 @@ class MissionRunner:
                     feature=row,
                     summary="No model provider could answer. This did not count as an attempt.",
                     evidence={"error": detail},
+                )
+
+    # ---------- validators (PRD §8.5) ----------
+
+    async def _validate(self, milestone_id: uuid.UUID) -> Literal["ok", "stopped"]:
+        """Run the milestone's validators; findings go back to the builder; after
+        MAX_VALIDATION_ROUNDS the user decides."""
+        async with self.services.sessionmaker() as session:
+            milestone = await session.get(Milestone, milestone_id)
+            assert milestone is not None
+            key, required = milestone.key, list(milestone.validators)
+        runnable = [name for name in required if name in VALIDATORS]
+        if not runnable:
+            return "ok"  # none required (or none built yet): the milestone stays "completed"
+
+        for round_no in range(1, MAX_VALIDATION_ROUNDS + 1):
+            if not await self._running():
+                return "stopped"
+            reports = await self._run_validators(milestone_id, key, runnable, round_no)
+            failed = [r for r in reports if r.verdict == "fail"]
+            unavailable = [r for r in reports if r.verdict == "needs_user"]
+            if not failed and not unavailable:
+                await self._set_milestone(milestone_id, "passed")
+                return "ok"
+            if not failed:
+                await self._need_validation(
+                    milestone_id,
+                    key,
+                    "validator_unavailable",
+                    "A validator could not check this milestone: "
+                    + "; ".join(r.validator for r in unavailable)
+                    + ". Nothing was marked as passing.",
+                    unavailable,
+                )
+                return "stopped"
+            if round_no == MAX_VALIDATION_ROUNDS:
+                break
+            if await self._send_back(milestone_id, failed) != "done":
+                return "stopped"
+        await self._set_milestone(milestone_id, "failed")
+        await self._need_validation(
+            milestone_id,
+            key,
+            "milestone_failed",
+            f"The milestone “{key}” still fails validation after {MAX_VALIDATION_ROUNDS} rounds.",
+            failed,
+        )
+        return "stopped"
+
+    async def _run_validators(
+        self, milestone_id: uuid.UUID, key: str, names: list[str], round_no: int
+    ) -> list[ValidatorReport]:
+        assert self.telemetry is not None
+        snaps = await self._feature_snaps(milestone_id)
+        async with self.services.sessionmaker.begin() as session:
+            for name in names:
+                await append_event(
+                    session,
+                    self.run_id,
+                    EventType.VALIDATOR_STARTED,
+                    agent_id=name,
+                    payload={"validator": name, "milestone_id": key, "round": round_no},
+                )
+
+        async def load_checks() -> dict[str, str]:
+            profile = await run_in_threadpool(
+                load_profile, self.workspace, self.worktree, self.services.settings.sandbox_images
+            )
+            return profile.checks
+
+        vc = ValidationContext(
+            services=self.services,
+            mission_id=self.mission_id,
+            run_id=self.run_id,
+            worktree=self.worktree,
+            telemetry=self.telemetry,
+            run_check=self._run_check,
+            load_checks=load_checks,
+        )
+        outcomes = await asyncio.gather(
+            *(VALIDATORS[name](vc, key, snaps) for name in names), return_exceptions=True
+        )
+        reports: list[ValidatorReport] = []
+        for name, outcome in zip(names, outcomes, strict=True):
+            if isinstance(outcome, BaseException):
+                logger.error("validator %s crashed", name, exc_info=outcome)
+                outcome = ValidatorReport(
+                    validator=name,
+                    milestone_id=key,
+                    verdict="needs_user",
+                    findings=[
+                        Finding(
+                            severity="info",
+                            message=f"The {name} validator failed to run "
+                            f"({type(outcome).__name__}): nothing was checked.",
+                        )
+                    ],
+                )
+            reports.append(outcome)
+        await self._store_reports(milestone_id, reports, round_no)
+        return reports
+
+    async def _feature_snaps(self, milestone_id: uuid.UUID) -> list[FeatureSnap]:
+        async with self.services.sessionmaker() as session:
+            rows = list(
+                await session.scalars(
+                    select(FeatureRow)
+                    .where(FeatureRow.milestone_id == milestone_id)
+                    .order_by(FeatureRow.position)
+                )
+            )
+        return [
+            FeatureSnap(
+                key=r.key,
+                title=r.title,
+                persona=r.persona_id,
+                expected_behavior=list(r.spec.get("expected_behavior", [])),
+                commit=r.commit if r.status == "done" else None,
+            )
+            for r in rows
+        ]
+
+    async def _store_reports(
+        self, milestone_id: uuid.UUID, reports: list[ValidatorReport], round_no: int
+    ) -> None:
+        async with self.services.sessionmaker.begin() as session:
+            for report in reports:
+                session.add(
+                    ValidatorReportRow(
+                        mission_id=self.mission_id,
+                        milestone_id=milestone_id,
+                        validator=report.validator,
+                        round=round_no,
+                        verdict=report.verdict,
+                        data=report.model_dump(mode="json"),
+                    )
+                )
+                await run_in_threadpool(
+                    folder.write_validator_report, self.worktree, report, round_no
+                )
+                await append_event(
+                    session,
+                    self.run_id,
+                    EventType.VALIDATOR_REPORTED,
+                    agent_id=report.validator,
+                    payload={
+                        "validator": report.validator,
+                        "milestone_id": report.milestone_id,
+                        "round": round_no,
+                        "verdict": report.verdict,
+                        "findings": len(report.findings),
+                        "blocking": len(report.blocking),
+                    },
+                )
+
+    async def _send_back(
+        self, milestone_id: uuid.UUID, failed: list[ValidatorReport]
+    ) -> Literal["done", "stopped"]:
+        """Give each feature its validators' blocking findings, exactly as reported (PRD §8.6:
+        the same persona gets the findings). Findings about the milestone as a whole go to its
+        last feature."""
+        snaps = await self._feature_snaps(milestone_id)
+        built = [s.key for s in snaps if s.commit]
+        if not built:
+            return "stopped"
+        by_feature: dict[str, list[str]] = {}
+        for report in failed:
+            for finding in report.blocking:
+                target = finding.feature_id if finding.feature_id in built else built[-1]
+                by_feature.setdefault(target, []).append(
+                    f"[{report.validator}, {finding.severity}] "
+                    + (f"{finding.file}:{finding.line}: " if finding.file else "")
+                    + finding.message
+                    + (f"\n{finding.evidence}" if finding.evidence else "")
+                )
+        for key in built:
+            if key not in by_feature:
+                continue
+            async with self.services.sessionmaker.begin() as session:
+                mission = await session.get(Mission, self.mission_id)
+                row = await self._feature(session, key)
+                assert mission is not None
+                row.attempts = 0
+                await service.set_feature(session, mission, row, "pending")
+            feedback = "A validator found problems with this feature:\n" + "\n".join(
+                by_feature[key]
+            )
+            if await self._build_feature(key, feedback) != "done":
+                return "stopped"
+        return "done"
+
+    async def _need_validation(
+        self,
+        milestone_id: uuid.UUID,
+        key: str,
+        kind: str,
+        summary: str,
+        reports: list[ValidatorReport],
+    ) -> None:
+        async with self.services.sessionmaker.begin() as session:
+            mission = await session.get(Mission, self.mission_id)
+            assert mission is not None
+            if await service.set_status(
+                session, self.mission_id, "needs_user", only_from=("running",), reason="validation"
+            ):
+                await service.create_need(
+                    session,
+                    mission,
+                    kind=kind,
+                    summary=summary,
+                    evidence={
+                        "milestone_id": key,
+                        "findings": [
+                            f"[{r.validator}, {f.severity}] {f.message}"
+                            for r in reports
+                            for f in r.findings
+                            if f.severity != "info"
+                        ][:20],
+                    },
                 )
 
     # ---------- finishing ----------

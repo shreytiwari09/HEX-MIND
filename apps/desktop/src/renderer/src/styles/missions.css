@@ -503,3 +503,53 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ---------- Validation ---------- */
+
+.validation {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+}
+
+.validation__report {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+
+.validation__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.validation__commands,
+.validation__findings {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
+}
+
+.validation__findings li[data-severity='critical'] .validation__severity,
+.validation__findings li[data-severity='major'] .validation__severity {
+  color: var(--danger);
+}
+
+.validation__severity {
+  margin-right: var(--space-2);
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+}
+
+.needs-you__findings {
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--text-sm);
+}

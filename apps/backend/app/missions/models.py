@@ -14,8 +14,10 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 FeatureStatus = Literal["pending", "in_progress", "done", "failed", "skipped"]
-# "completed": every feature is done or skipped. Validators arrive in P5 and will add "passed".
-MilestoneStatus = Literal["pending", "active", "completed", "failed"]
+# completed: every feature is done or skipped (validators, if any, have not passed it yet).
+# passed: every required validator passed it. failed: a validator found problems the team could
+# not fix. accepted: the user chose to go on despite that.
+MilestoneStatus = Literal["pending", "active", "completed", "passed", "failed", "accepted"]
 # PRD §8.1. Cancelled and failed can follow any other state.
 MissionStatus = Literal[
     "draft",
@@ -152,3 +154,32 @@ class MissionPlan(BaseModel):
                 if feature.status != "pending" or feature.attempts or feature.commit:
                     raise ValueError(f"feature {feature.id}: a new plan starts every feature fresh")
         return self
+
+
+Severity = Literal["info", "minor", "major", "critical"]
+Verdict = Literal["pass", "fail", "needs_user"]
+
+
+class Finding(BaseModel):
+    feature_id: str | None = None
+    file: str | None = None
+    line: int | None = None
+    severity: Severity = "minor"
+    message: str
+    contract_ref: str | None = None  # e.g. "VC-2.3"
+    evidence: str | None = None  # e.g. test output
+
+
+class ValidatorReport(BaseModel):
+    """What one validator found at the end of a milestone (PRD §9.5). `commands` come from the
+    sandbox, not from the validator's say-so."""
+
+    validator: str  # persona id
+    milestone_id: str
+    verdict: Verdict
+    findings: list[Finding] = Field(default_factory=list)
+    commands: list[CommandResult] = Field(default_factory=list)
+
+    @property
+    def blocking(self) -> list[Finding]:
+        return [f for f in self.findings if f.severity in ("major", "critical")]

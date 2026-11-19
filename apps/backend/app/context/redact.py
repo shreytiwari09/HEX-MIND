@@ -28,6 +28,25 @@ _SECRET_ASSIGNMENT = re.compile(
 
 REDACTED = "[REDACTED]"
 
+_SECRET_KINDS = (
+    "a provider API key",
+    "a GitHub token",
+    "an AWS access key",
+    "a private key",
+)
+
+
+def find_secrets(text: str) -> list[str]:
+    """What kinds of secret `text` appears to contain (never the secret itself)."""
+    kinds = [
+        kind
+        for kind, pattern in zip(_SECRET_KINDS, _SECRET_VALUE_PATTERNS, strict=True)
+        if pattern.search(text)
+    ]
+    if _SECRET_ASSIGNMENT.search(text):
+        kinds.append("a hard-coded secret value")
+    return kinds
+
 
 def is_secret_file(path: str) -> bool:
     name = PurePosixPath(path).name.lower()

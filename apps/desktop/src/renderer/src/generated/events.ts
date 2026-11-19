@@ -1,7 +1,7 @@
 /* Generated from the backend event schema (apps/backend/app/events/schema.py). Do not edit; run: npm run gen:events */
 
 /**
- * H.E.X Mind agent event, schema version 6.
+ * H.E.X Mind agent event, schema version 7.
  */
 export type AgentEvent =
   | RunCreatedEvent
@@ -41,14 +41,16 @@ export type AgentEvent =
   | NeedAnsweredEvent
   | KeyRotatedEvent
   | BudgetWarningEvent
-  | EscalatedEvent;
+  | EscalatedEvent
+  | ValidatorStartedEvent
+  | ValidatorReportedEvent;
 
 export interface RunCreatedEvent {
   agent_id: string | null;
   event_id: string;
   payload: RunCreated;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -64,7 +66,7 @@ export interface RunStatusChangedEvent {
   event_id: string;
   payload: RunStatusChanged;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -80,7 +82,7 @@ export interface RouterDecidedEvent {
   event_id: string;
   payload: RouterDecided;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -99,7 +101,7 @@ export interface TaskCreatedEvent {
   event_id: string;
   payload: TaskCreated;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -116,7 +118,7 @@ export interface TaskClaimedEvent {
   event_id: string;
   payload: TaskClaimed;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -130,7 +132,7 @@ export interface TaskStartedEvent {
   event_id: string;
   payload: TaskStarted;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -144,7 +146,7 @@ export interface ToolCalledEvent {
   event_id: string;
   payload: ToolCalled;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -160,7 +162,7 @@ export interface LlmCallStartedEvent {
   event_id: string;
   payload: LLMCallStarted;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -176,7 +178,7 @@ export interface LlmCallCompletedEvent {
   event_id: string;
   payload: LLMCallCompleted;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -198,7 +200,7 @@ export interface ProviderFallbackEvent {
   event_id: string;
   payload: ProviderFallback;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -214,7 +216,7 @@ export interface CheckStartedEvent {
   event_id: string;
   payload: CheckStarted;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -228,7 +230,7 @@ export interface CheckCompletedEvent {
   event_id: string;
   payload: CheckCompleted;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -244,7 +246,7 @@ export interface ReviewStartedEvent {
   event_id: string;
   payload: ReviewStarted;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -258,7 +260,7 @@ export interface ReviewCompletedEvent {
   event_id: string;
   payload: ReviewCompleted;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -273,7 +275,7 @@ export interface TaskCompletedEvent {
   event_id: string;
   payload: TaskCompleted;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -287,7 +289,7 @@ export interface TaskFailedEvent {
   event_id: string;
   payload: TaskFailed;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -301,7 +303,7 @@ export interface TaskBlockedEvent {
   event_id: string;
   payload: TaskBlocked;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -315,7 +317,7 @@ export interface DiffReadyEvent {
   event_id: string;
   payload: DiffReady;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -329,7 +331,7 @@ export interface RunCompletedEvent {
   event_id: string;
   payload: RunCompleted;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -344,7 +346,7 @@ export interface RunFailedEvent {
   event_id: string;
   payload: RunFailed;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -358,7 +360,7 @@ export interface RunCancelledEvent {
   event_id: string;
   payload: RunCancelled;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -372,7 +374,7 @@ export interface AgentStartedEvent {
   event_id: string;
   payload: AgentStarted;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -389,7 +391,7 @@ export interface AgentFinishedEvent {
   event_id: string;
   payload: AgentFinished;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -406,7 +408,7 @@ export interface CallbackFiredEvent {
   event_id: string;
   payload: CallbackFired;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -426,7 +428,7 @@ export interface SchemaValidatedEvent {
   event_id: string;
   payload: SchemaValidated;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -443,7 +445,7 @@ export interface GuardrailTriggeredEvent {
   event_id: string;
   payload: GuardrailTriggered;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -459,7 +461,7 @@ export interface A2AMessageEvent {
   event_id: string;
   payload: A2AMessage;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -487,7 +489,7 @@ export interface PromptVariantSelectedEvent {
   event_id: string;
   payload: PromptVariantSelected;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -502,7 +504,7 @@ export interface MissionStatusChangedEvent {
   event_id: string;
   payload: MissionStatusChanged;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -518,7 +520,7 @@ export interface MilestoneStatusChangedEvent {
   event_id: string;
   payload: MilestoneStatusChanged;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -534,7 +536,7 @@ export interface FeatureStatusChangedEvent {
   event_id: string;
   payload: FeatureStatusChanged;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -553,7 +555,7 @@ export interface HandoffRecordedEvent {
   event_id: string;
   payload: HandoffRecorded;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -573,7 +575,7 @@ export interface CheckpointCreatedEvent {
   event_id: string;
   payload: CheckpointCreated;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -589,7 +591,7 @@ export interface NeedRaisedEvent {
   event_id: string;
   payload: NeedRaised;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -607,7 +609,7 @@ export interface NeedAnsweredEvent {
   event_id: string;
   payload: NeedAnswered;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -622,7 +624,7 @@ export interface KeyRotatedEvent {
   event_id: string;
   payload: KeyRotated;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -642,7 +644,7 @@ export interface BudgetWarningEvent {
   event_id: string;
   payload: BudgetWarning;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -662,7 +664,7 @@ export interface EscalatedEvent {
   event_id: string;
   payload: Escalated;
   run_id: string;
-  schema_version: 6;
+  schema_version: 7;
   seq: number;
   task_id: string | null;
   ts: string;
@@ -678,4 +680,39 @@ export interface Escalated {
   model: string;
   persona: string;
   reason: string;
+}
+export interface ValidatorStartedEvent {
+  agent_id: string | null;
+  event_id: string;
+  payload: ValidatorStarted;
+  run_id: string;
+  schema_version: 7;
+  seq: number;
+  task_id: string | null;
+  ts: string;
+  type: "validator_started";
+}
+export interface ValidatorStarted {
+  milestone_id: string;
+  round: number;
+  validator: string;
+}
+export interface ValidatorReportedEvent {
+  agent_id: string | null;
+  event_id: string;
+  payload: ValidatorReported;
+  run_id: string;
+  schema_version: 7;
+  seq: number;
+  task_id: string | null;
+  ts: string;
+  type: "validator_reported";
+}
+export interface ValidatorReported {
+  blocking: number;
+  findings: number;
+  milestone_id: string;
+  round: number;
+  validator: string;
+  verdict: "pass" | "fail" | "needs_user";
 }

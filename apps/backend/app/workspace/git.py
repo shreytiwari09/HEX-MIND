@@ -91,6 +91,24 @@ def remove_worktree(root: Path, path: Path) -> None:
     _git(root, "worktree", "prune", check=False)
 
 
+_NO_HEX = ":(exclude).hex"
+
+
+def commit_diff(worktree: Path, commit: str) -> str:
+    """The unified diff a commit made, without the mission's own `.hex/` files."""
+    return _git(worktree, "show", "--no-renames", "--format=", commit, "--", ".", _NO_HEX).stdout
+
+
+def range_diff(worktree: Path, base: str, head: str) -> str:
+    """The unified diff between two commits, without `.hex/`."""
+    return _git(worktree, "diff", "--no-renames", base, head, "--", ".", _NO_HEX).stdout
+
+
+def parent_of(worktree: Path, commit: str) -> str | None:
+    result = _git(worktree, "rev-parse", "--verify", "-q", f"{commit}^", check=False)
+    return result.stdout.strip() or None
+
+
 def file_bytes(root: Path, commit: str, path: str) -> bytes | None:
     """Exact file bytes at a commit (binary-safe), or None if it does not exist there."""
     result = subprocess.run(

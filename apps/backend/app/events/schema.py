@@ -10,8 +10,9 @@ schema_validated) and reserves guardrail_triggered, a2a_message and prompt_varia
 P2/P4. v3 (P2) gives a2a_message the fields both ends of an A2A exchange record. v4 (P3) adds
 the mission events (mission, milestone and feature status, handoffs, checkpoints, Needs you)
 that the Mission Control stream carries. v5 (P4) adds key_rotated, a pool key swapped after a
-rate limit, quota or auth error. v6 (P4) adds budget_warning and escalated. Any change
-needs agreement from all owners and bumps SCHEMA_VERSION.
+rate limit, quota or auth error. v6 (P4) adds budget_warning and escalated. v7 (P5) adds
+validator_started and validator_reported. Any change needs agreement from all owners and bumps
+SCHEMA_VERSION.
 
 Payloads carry `stub: true` when the work they describe was not really performed (M2 worker
 stubs). The UI must label such events instead of presenting them as agent progress.
@@ -22,7 +23,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 Complexity = Literal["low", "medium", "high"]
 Framework = Literal["adk", "crewai"]
@@ -70,6 +71,9 @@ class EventType(StrEnum):
     KEY_ROTATED = "key_rotated"
     BUDGET_WARNING = "budget_warning"
     ESCALATED = "escalated"
+    # v7: validators (P5)
+    VALIDATOR_STARTED = "validator_started"
+    VALIDATOR_REPORTED = "validator_reported"
 
 
 class Payload(BaseModel):
@@ -328,6 +332,21 @@ class Escalated(Payload):
     reason: str
 
 
+class ValidatorStarted(Payload):
+    validator: str
+    milestone_id: str  # the plan's milestone id
+    round: int
+
+
+class ValidatorReported(Payload):
+    validator: str
+    milestone_id: str
+    round: int
+    verdict: Literal["pass", "fail", "needs_user"]
+    findings: int
+    blocking: int  # findings of severity major or critical
+
+
 PAYLOADS: dict[EventType, type[Payload]] = {
     EventType.RUN_CREATED: RunCreated,
     EventType.RUN_STATUS_CHANGED: RunStatusChanged,
@@ -367,4 +386,6 @@ PAYLOADS: dict[EventType, type[Payload]] = {
     EventType.KEY_ROTATED: KeyRotated,
     EventType.BUDGET_WARNING: BudgetWarning,
     EventType.ESCALATED: Escalated,
+    EventType.VALIDATOR_STARTED: ValidatorStarted,
+    EventType.VALIDATOR_REPORTED: ValidatorReported,
 }

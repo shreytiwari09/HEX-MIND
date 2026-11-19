@@ -8,14 +8,17 @@ const OPTION_LABEL: Record<string, string> = {
   retry: 'Retry',
   skip: 'Skip this feature',
   stop: 'Stop the mission',
-  raise_budget: 'Raise budget'
+  raise_budget: 'Raise budget',
+  accept: 'Accept and continue'
 }
 
 const KIND_TITLE: Record<Need['kind'], string> = {
   feature_failed: 'A feature could not be finished',
   provider_unavailable: 'No model could answer',
   budget_reached: 'The budget is used up',
-  persona_budget_reached: 'A persona reached its budget'
+  persona_budget_reached: 'A persona reached its budget',
+  milestone_failed: 'A milestone did not pass validation',
+  validator_unavailable: 'A validator could not check the milestone'
 }
 
 interface Props {
@@ -58,6 +61,13 @@ export function NeedsYou({ api, needs, onAnswered }: Props) {
             <h4 className="needs-you__kind">{KIND_TITLE[need.kind] ?? need.kind}</h4>
             <p className="needs-you__summary">{need.summary}</p>
             {findings && <pre className="needs-you__evidence">{findings}</pre>}
+            {Array.isArray(need.evidence.findings) && need.evidence.findings.length > 0 && (
+              <ul className="needs-you__findings" aria-label="Findings">
+                {need.evidence.findings.map((item) => (
+                  <li key={String(item)}>{String(item)}</li>
+                ))}
+              </ul>
+            )}
             {(need.kind === 'budget_reached' || need.kind === 'persona_budget_reached') && (
               <label className="needs-you__field">
                 {need.kind === 'persona_budget_reached' ? 'New budget for this persona (USD)' : 'New budget (USD)'}

@@ -470,3 +470,18 @@ class PersonaBudget(Base):
     persona_id: Mapped[str] = mapped_column(String(32), primary_key=True)
     budget_usd: Mapped[Decimal] = mapped_column(Numeric(10, 4))
     updated_at: Mapped[datetime] = _updated_at()
+
+
+class ValidatorReportRow(Base):
+    """A validator's report for a milestone, one per validator per round (PRD §9.5)."""
+
+    __tablename__ = "validator_reports"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    mission_id: Mapped[uuid.UUID] = _fk("missions.id")
+    milestone_id: Mapped[uuid.UUID] = _fk("milestones.id")
+    validator: Mapped[str] = mapped_column(String(32))
+    round: Mapped[int] = mapped_column(Integer)
+    verdict: Mapped[str] = mapped_column(String(16))
+    data: Mapped[dict[str, Any]] = mapped_column()  # the ValidatorReport, as JSON
+    created_at: Mapped[datetime] = _created_at()

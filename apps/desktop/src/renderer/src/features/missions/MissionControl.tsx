@@ -7,6 +7,7 @@ import { describeError, postAction, type MissionAction } from './actions'
 import { ApplyPanel } from './ApplyPanel'
 import { Checkpoints } from './Checkpoints'
 import { CostsPanel } from './CostsPanel'
+import { ValidationPanel } from './ValidationPanel'
 import { FeatureTree } from './FeatureTree'
 import { NeedsYou } from './NeedsYou'
 import {
@@ -199,6 +200,14 @@ export function MissionScreen({
             <FeatureTree mission={mission} />
           </section>
           <ProgressLog events={events} />
+          <section aria-label="Validation">
+            <h3 className="mission__section-title">Validation</h3>
+            <ValidationPanel
+              api={api}
+              missionId={mission.id}
+              refreshKey={`${mission.status}:${events.filter((e) => e.type === 'validator_reported').length}`}
+            />
+          </section>
           <section aria-label="Costs">
             <h3 className="mission__section-title">Costs and delegation</h3>
             <CostsPanel

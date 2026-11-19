@@ -220,6 +220,9 @@ NEED_ACTIONS: dict[str, tuple[str, ...]] = {
     "provider_unavailable": ("retry", "stop"),
     "budget_reached": ("raise_budget", "stop"),
     "persona_budget_reached": ("raise_budget", "skip", "stop"),
+    # retry: validate again; accept: go on without a pass (recorded as "accepted").
+    "milestone_failed": ("retry", "accept", "stop"),
+    "validator_unavailable": ("retry", "accept", "stop"),
 }
 WARN_AT = Decimal("0.8")  # PRD §8.6: a warning at 80% of a budget
 OPEN_STATES = ("awaiting_approval", "running", "paused", "needs_user")
@@ -482,7 +485,18 @@ async def answer_need(
         target = "cancelled"
     else:
         target = "running"
-        if action == "retry" and feature is not None and need.kind == "feature_failed":
+        if need.kind in ("milestone_failed", "validator_unavailable"):
+            milestone = await session.scalar(
+                select(Milestone).where(
+                    Milestone.mission_id == mission.id,
+                    Milestone.key == str(need.evidence.get("milestone_id", "")),
+                )
+            )
+            if milestone is not None:
+                await set_milestone(
+                    session, mission, milestone, "completed" if action == "retry" else "accepted"
+                )
+        elif action == "retry" and feature is not None and need.kind == "feature_failed":
             feature.attempts = 0
             await set_feature(session, mission, feature, "pending")
         elif action == "skip" and feature is not None:

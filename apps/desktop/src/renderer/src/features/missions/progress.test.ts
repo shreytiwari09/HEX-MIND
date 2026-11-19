@@ -18,7 +18,7 @@ import {
 import { mission } from './fixtures'
 import type { MissionStatus } from './types'
 
-const base = { schema_version: 6 as const, event_id: 'e', run_id: 'r1', ts: '2026-11-19T10:00:00Z', agent_id: null, task_id: null }
+const base = { schema_version: 7 as const, event_id: 'e', run_id: 'r1', ts: '2026-11-19T10:00:00Z', agent_id: null, task_id: null }
 
 describe('progressOf and activeFeature', () => {
   it('counts finished (done or skipped) features and milestones from the real statuses', () => {
@@ -31,6 +31,13 @@ describe('progressOf and activeFeature', () => {
       milestonesFinished: 1,
       milestonesTotal: 2
     })
+    // A validated or accepted milestone counts as finished too; a failed one does not.
+    const validated = mission()
+    validated.milestones[0].status = 'passed'
+    validated.milestones[1].status = 'accepted'
+    expect(progressOf(validated).milestonesFinished).toBe(2)
+    validated.milestones[1].status = 'failed'
+    expect(progressOf(validated).milestonesFinished).toBe(1)
     expect(activeFeature(mission())?.id).toBe('c')
     expect(activeFeature(mission({ milestones: [] }))).toBeNull()
   })

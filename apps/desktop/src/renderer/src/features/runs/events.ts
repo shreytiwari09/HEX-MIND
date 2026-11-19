@@ -134,6 +134,13 @@ export function describeEvent(event: AgentEvent): string {
       const p = event.payload
       return `${p.persona}, attempt ${p.attempt}: escalated to ${p.model} on ${p.connection} (${p.reason})`
     }
+    case 'validator_started':
+      return `${event.payload.validator} is checking ${event.payload.milestone_id} (round ${event.payload.round})`
+    case 'validator_reported': {
+      const p = event.payload
+      const found = p.findings === 0 ? 'no findings' : `${p.findings} finding(s), ${p.blocking} blocking`
+      return `${p.validator} on ${p.milestone_id}: ${p.verdict.replace('_', ' ')} (${found})`
+    }
     case 'need_answered':
       return `answered: ${event.payload.action.replace('_', ' ')}`
     default:

@@ -63,7 +63,10 @@ export function progressOf(mission: Mission): Progress {
     done,
     skipped,
     failed: count('failed'),
-    milestonesFinished: mission.milestones.filter((m) => m.status === 'completed').length,
+    // Done building: validated, accepted by you, or (with no validators) just completed.
+    milestonesFinished: mission.milestones.filter((m) =>
+      ['completed', 'passed', 'accepted'].includes(m.status)
+    ).length,
     milestonesTotal: mission.milestones.length
   }
 }
@@ -125,7 +128,10 @@ export const MISSION_EVENT_TYPES: ReadonlySet<AgentEvent['type']> = new Set([
   'key_rotated',
   'provider_fallback',
   'escalated',
-  'budget_warning'
+  'budget_warning',
+  // Validators checking a milestone.
+  'validator_started',
+  'validator_reported'
 ])
 
 /** What the worker is doing, for the live output pane. */

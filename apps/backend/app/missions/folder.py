@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from app.missions.models import Handoff, MissionContext
+from app.missions.models import Handoff, MissionContext, ValidatorReport
 
 
 def mission_dir(worktree: Path) -> Path:
@@ -43,3 +43,11 @@ def _atomic_write(path: Path, text: str) -> None:
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_bytes(text.encode("utf-8"))  # bytes: no newline translation on Windows
     os.replace(tmp, path)
+
+
+def write_validator_report(worktree: Path, report: ValidatorReport, round_no: int) -> Path:
+    """One JSON report per validator per milestone round in `validator-reports/`."""
+    name = f"{report.milestone_id}-{report.validator}-r{round_no}.json"
+    path = mission_dir(worktree) / "validator-reports" / name
+    _atomic_write(path, report.model_dump_json(indent=2) + "\n")
+    return path
