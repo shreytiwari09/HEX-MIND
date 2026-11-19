@@ -4,6 +4,7 @@ import {
   Files,
   FolderOpen,
   History,
+  KeyRound,
   PanelBottom,
   PanelRight,
   RefreshCw,
@@ -22,6 +23,7 @@ import { disposeModel } from './features/editor/monaco'
 import { useEditorTabs } from './features/editor/useEditorTabs'
 import { FileTree } from './features/explorer/FileTree'
 import { ObservabilityView, RunList } from './features/observability/ObservabilityView'
+import { ModelsScreen, type ModelsTab } from './features/models/ModelsScreen'
 import { MissionControl } from './features/missions/MissionControl'
 import { MissionList } from './features/missions/MissionList'
 import { NewMission } from './features/missions/NewMission'
@@ -34,11 +36,12 @@ import { useWorkspace } from './features/workspace/useWorkspace'
 import { useBackendHealth } from './hooks/useBackendHealth'
 import { useBackend } from './lib/backend'
 
-type View = 'explorer' | 'missions' | 'observability' | 'agents' | 'runs' | 'settings'
+type View = 'explorer' | 'missions' | 'models' | 'observability' | 'agents' | 'runs' | 'settings'
 
 const VIEWS: { id: View; label: string; icon: LucideIcon }[] = [
   { id: 'explorer', label: 'Explorer', icon: Files },
   { id: 'missions', label: 'Missions', icon: Rocket },
+  { id: 'models', label: 'Models & Keys', icon: KeyRound },
   { id: 'observability', label: 'Observability', icon: Activity },
   { id: 'agents', label: 'Agents', icon: Bot },
   { id: 'runs', label: 'Runs', icon: History },
@@ -48,7 +51,7 @@ const VIEWS: { id: View; label: string; icon: LucideIcon }[] = [
 const BOTTOM_TABS = ['Problems', 'Tasks', 'Agent Events', 'Logs'] as const
 type BottomTab = (typeof BOTTOM_TABS)[number]
 
-const SIDEBAR_EMPTY: Record<Exclude<View, 'explorer' | 'missions' | 'observability' | 'runs'>, string> = {
+const SIDEBAR_EMPTY: Record<Exclude<View, 'explorer' | 'missions' | 'models' | 'observability' | 'runs'>, string> = {
   agents: 'No agents running',
   settings: ''
 }
@@ -71,6 +74,7 @@ export function App() {
   const [selectedMissionId, setSelectedMissionId] = useState<string | null>(null)
   const [creatingMission, setCreatingMission] = useState(false)
   const [missionsRefresh, setMissionsRefresh] = useState(0)
+  const [modelsTab, setModelsTab] = useState<ModelsTab>('connections')
 
   const openRun = (runId: string) => {
     setSelectedRunId(runId)
@@ -207,6 +211,20 @@ export function App() {
             <PanelHeader title={viewLabel} />
             {view === 'settings' ? (
               <ProvidersPanel api={api} />
+            ) : view === 'models' ? (
+              <nav className="mission-list" aria-label="Models and keys sections">
+                {(['connections', 'team'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    className="mission-list__item"
+                    aria-current={modelsTab === tab ? 'true' : undefined}
+                    onClick={() => setModelsTab(tab)}
+                  >
+                    {tab === 'connections' ? 'Connections' : 'Team models'}
+                  </button>
+                ))}
+              </nav>
             ) : view === 'missions' ? (
               <MissionList
                 api={api}
@@ -236,6 +254,8 @@ export function App() {
       <main className="editor">
         {diffRunId ? (
           <DiffView api={api} runId={diffRunId} onClose={() => setDiffRunId(null)} />
+        ) : view === 'models' ? (
+          <ModelsScreen api={api} tab={modelsTab} />
         ) : view === 'missions' ? (
           creatingMission && project ? (
             <NewMission

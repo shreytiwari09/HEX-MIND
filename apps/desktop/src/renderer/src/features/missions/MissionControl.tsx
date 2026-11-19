@@ -6,6 +6,7 @@ import type { ApiClient } from '../../lib/api'
 import { describeError, postAction, type MissionAction } from './actions'
 import { ApplyPanel } from './ApplyPanel'
 import { Checkpoints } from './Checkpoints'
+import { CostsPanel } from './CostsPanel'
 import { FeatureTree } from './FeatureTree'
 import { NeedsYou } from './NeedsYou'
 import {
@@ -14,6 +15,7 @@ import {
   elapsedMs,
   formatElapsed,
   formatUsd,
+  isDelegationEvent,
   isMissionEvent,
   isWorkerEvent,
   progressOf,
@@ -141,6 +143,12 @@ export function MissionScreen({
             </dd>
           </div>
           <div>
+            <dt>Tokens</dt>
+            <dd>
+              {mission.tokens_in.toLocaleString()} in / {mission.tokens_out.toLocaleString()} out
+            </dd>
+          </div>
+          <div>
             <dt>Branch</dt>
             <dd>
               <code>{mission.branch}</code>
@@ -191,6 +199,14 @@ export function MissionScreen({
             <FeatureTree mission={mission} />
           </section>
           <ProgressLog events={events} />
+          <section aria-label="Costs">
+            <h3 className="mission__section-title">Costs and delegation</h3>
+            <CostsPanel
+              api={api}
+              missionId={mission.id}
+              refreshKey={`${mission.status}:${mission.spent_usd}:${mission.tokens_in}:${events.filter(isDelegationEvent).length}`}
+            />
+          </section>
           <section aria-label="Checkpoints">
             <h3 className="mission__section-title">Checkpoints</h3>
             <Checkpoints

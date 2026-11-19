@@ -58,6 +58,8 @@ export interface Mission {
   branch: string
   budget_usd: number | null
   spent_usd: number
+  tokens_in: number
+  tokens_out: number
   created_at: string
   started_at: string | null
   finished_at: string | null
@@ -69,7 +71,7 @@ export interface Need {
   id: string
   mission_id: string
   feature_id: string | null
-  kind: 'feature_failed' | 'provider_unavailable' | 'budget_reached'
+  kind: 'feature_failed' | 'provider_unavailable' | 'budget_reached' | 'persona_budget_reached'
   summary: string
   evidence: Record<string, unknown>
   options: string[]
@@ -97,4 +99,49 @@ export interface MissionDiff {
   run_id: string
   base_commit: string | null
   files: MissionDiffFile[]
+}
+
+export interface CostRow {
+  spent_usd: number
+  calls: number
+  tokens_in: number
+  tokens_out: number
+}
+
+export interface PersonaCost extends CostRow {
+  persona_id: string | null
+  budget_usd: number | null
+}
+
+export interface ModelCost extends CostRow {
+  provider: string
+  model: string
+}
+
+export interface Costs {
+  total_usd: number
+  budget_usd: number | null
+  tokens_in: number
+  tokens_out: number
+  calls: number
+  /** Successful calls whose model has no known price: their cost is not in the totals. */
+  unpriced_calls: number
+  by_persona: PersonaCost[]
+  by_model: ModelCost[]
+}
+
+export interface DelegationAssignment {
+  persona_id: string
+  connection: string | null
+  model: string
+  set_by: 'user' | 'auto'
+  reason: string | null
+  escalate_model: string | null
+  budget_usd: number | null
+}
+
+export interface Delegation {
+  assignments: DelegationAssignment[]
+  /** Fallbacks, key rotations, escalations, budget warnings and Needs-you items, oldest first. */
+  events: import('../../generated/events').AgentEvent[]
 }

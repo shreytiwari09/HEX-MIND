@@ -14,7 +14,8 @@ const OPTION_LABEL: Record<string, string> = {
 const KIND_TITLE: Record<Need['kind'], string> = {
   feature_failed: 'A feature could not be finished',
   provider_unavailable: 'No model could answer',
-  budget_reached: 'The budget is used up'
+  budget_reached: 'The budget is used up',
+  persona_budget_reached: 'A persona reached its budget'
 }
 
 interface Props {
@@ -57,9 +58,9 @@ export function NeedsYou({ api, needs, onAnswered }: Props) {
             <h4 className="needs-you__kind">{KIND_TITLE[need.kind] ?? need.kind}</h4>
             <p className="needs-you__summary">{need.summary}</p>
             {findings && <pre className="needs-you__evidence">{findings}</pre>}
-            {need.kind === 'budget_reached' && (
+            {(need.kind === 'budget_reached' || need.kind === 'persona_budget_reached') && (
               <label className="needs-you__field">
-                New budget (USD)
+                {need.kind === 'persona_budget_reached' ? 'New budget for this persona (USD)' : 'New budget (USD)'}
                 <input
                   type="number"
                   min="0"

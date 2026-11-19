@@ -7,6 +7,7 @@ import './styles/tokens.css'
 import './styles/app.css'
 import './styles/observability.css'
 import './styles/missions.css'
+import './styles/models.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

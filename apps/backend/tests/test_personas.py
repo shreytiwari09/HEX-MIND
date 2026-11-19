@@ -183,3 +183,13 @@ def test_a_handoff_takes_measured_facts_not_agent_claims() -> None:
 def test_mission_dir_is_inside_the_worktree() -> None:
     ctx = MissionContext(worktree=Path("w"), workspace=Path("p"))
     assert ctx.mission_dir == Path("w") / ".hex" / "mission"
+
+
+async def test_the_personas_endpoint_lists_the_team(client) -> None:  # type: ignore[no-untyped-def]
+    response = await client.get("/api/personas")
+
+    assert response.status_code == 200
+    team = {p["id"]: p for p in response.json()}
+    assert set(team) == WORKERS | VALIDATORS | {"pm", "researcher"}
+    assert (team["backend"]["name"], team["backend"]["kind"]) == ("Backend engineer", "worker")
+    assert team["qa"]["plugins"] == ["playwright"]

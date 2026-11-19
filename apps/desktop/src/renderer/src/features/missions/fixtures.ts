@@ -35,6 +35,8 @@ export function mission(extra: Partial<Mission> = {}): Mission {
     branch: 'hex/mission-abc',
     budget_usd: null,
     spent_usd: 0,
+    tokens_in: 0,
+    tokens_out: 0,
     created_at: '2026-11-19T10:00:00Z',
     started_at: '2026-11-19T10:00:00Z',
     finished_at: null,

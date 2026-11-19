@@ -120,7 +120,12 @@ export const MISSION_EVENT_TYPES: ReadonlySet<AgentEvent['type']> = new Set([
   'handoff_recorded',
   'checkpoint_created',
   'need_raised',
-  'need_answered'
+  'need_answered',
+  // Delegation: what the router did with this mission's model calls.
+  'key_rotated',
+  'provider_fallback',
+  'escalated',
+  'budget_warning'
 ])
 
 /** What the worker is doing, for the live output pane. */
@@ -133,6 +138,14 @@ const WORKER_EVENT_TYPES: ReadonlySet<AgentEvent['type']> = new Set([
 ])
 
 export const isMissionEvent = (event: AgentEvent) => MISSION_EVENT_TYPES.has(event.type)
+
+const DELEGATION_EVENT_TYPES: ReadonlySet<AgentEvent['type']> = new Set([
+  'key_rotated',
+  'provider_fallback',
+  'escalated',
+  'budget_warning'
+])
+export const isDelegationEvent = (event: AgentEvent) => DELEGATION_EVENT_TYPES.has(event.type)
 export const isWorkerEvent = (event: AgentEvent) => WORKER_EVENT_TYPES.has(event.type)
 
 export interface LogLine {
