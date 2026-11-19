@@ -4,7 +4,7 @@ A desktop app where a team of AI agent personas (PM, Backend, Frontend, Designer
 
 **`PRD.md` is the single source of truth.** Read the relevant sections before starting any phase or feature. Don't create other planning `.md` files; update `PRD.md` instead, and record changed decisions in its §21.
 
-**Current phase:** P3 Mission core (PRD §18.1). Update this line when a phase is done.
+**Current phase:** P5 Planning & validation (PRD §18.1). P3 (Mission core) and P4 (Models & keys) are built and test-verified on branches `p3-mission-core` and `p4-models-and-keys`; neither has had a live run with real provider keys yet. Update this line when a phase is done.
 
 ## Commands (run from the repo root)
 - Database: `npm run db:up`, then `npm run db:migrate` (Postgres on 127.0.0.1:5433)

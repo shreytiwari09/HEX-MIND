@@ -73,7 +73,8 @@ def test_stdio_server_round_trip(root: Path, tmp_path: Path) -> None:
     names = workspace.start()
     try:
         assert set(names) == {
-            "list_files", "read_file", "search_code", "write_file", "replace_in_file", "run_check",
+            "list_files", "read_file", "search_code", "write_file", "replace_in_file",
+            "list_checks", "run_check",
         }  # fmt: skip
         ok, text = workspace.call_tool("read_file", {"path": "src/todo.js"})
         assert ok and "export function add" in text

@@ -36,6 +36,7 @@ class McpWorkspace:
         allowed_images: list[str],
         check_timeout_s: int,
         call_timeout_s: float = 300,
+        writable: tuple[str, ...] = (),
     ) -> None:
         self._params = StdioServerParameters(
             command=sys.executable,
@@ -45,6 +46,7 @@ class McpWorkspace:
                 "--workspace", str(workspace),
                 "--allowed-images", ",".join(allowed_images),
                 "--check-timeout", str(check_timeout_s),
+                "--writable", ",".join(writable),
             ],
             cwd=str(BACKEND_DIR),
             env=_server_env(),

@@ -52,6 +52,11 @@ def build_server(tools: WorkspaceTools) -> FastMCP:
         return guarded(tools.replace_in_file)(path, old, new)
 
     @server.tool()
+    def list_checks() -> str:
+        """List the project's checks (name: command), as defined by its run contract."""
+        return guarded(tools.list_checks)()
+
+    @server.tool()
     def run_check(name: str) -> str:
         """Run a named project check (for example `test`) in the sandbox; returns JSON."""
         return guarded(tools.run_check)(name)
@@ -65,12 +70,14 @@ def main() -> None:
     parser.add_argument("--workspace", required=True, type=Path)
     parser.add_argument("--allowed-images", required=True)
     parser.add_argument("--check-timeout", type=int, default=120)
+    parser.add_argument("--writable", default="", help="exact extra paths agents may write")
     args = parser.parse_args()
     tools = WorkspaceTools(
         args.root,
         workspace=args.workspace,
         allowed_images=args.allowed_images.split(","),
         check_timeout_s=args.check_timeout,
+        writable_extra=frozenset(p for p in args.writable.split(",") if p),
     )
     build_server(tools).run("stdio")
 

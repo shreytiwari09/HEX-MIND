@@ -51,6 +51,7 @@ from app.missions.models import AgentReport, MissionContext
 from app.orchestration.services import Services
 from app.providers.assignments import route_for
 from app.providers.router import CallContext
+from app.sandbox.contract import CONTRACT_PATH, DOCKERFILE_PATH
 from app.telemetry.hub import TelemetryHub
 
 logger = logging.getLogger(__name__)
@@ -181,6 +182,7 @@ class CrewExecutor(AgentExecutor):
             workspace=Path(request.workspace),
             allowed_images=settings.sandbox_images,
             check_timeout_s=settings.sandbox_timeout_s,
+            writable=_writable_for(request),
         )
         await run_in_threadpool(mcp.start)
         try:
@@ -250,6 +252,14 @@ class CrewExecutor(AgentExecutor):
             return roles.parse_json_output(raw, AgentReport).model_dump_json()
         finally:
             await run_in_threadpool(mcp.close)
+
+
+def _writable_for(request: CrewRequest) -> tuple[str, ...]:
+    """Files an agent may write inside the read-only `.hex/` area: the DevOps persona writes the
+    run contract and its Dockerfile (PRD §9.6), nobody else writes anything there."""
+    if isinstance(request, PersonaRequest) and request.persona_id == "devops":
+        return (CONTRACT_PATH, DOCKERFILE_PATH)
+    return ()
 
 
 def _crew_purpose(role: CrewRole) -> Literal["planner", "coder"]:

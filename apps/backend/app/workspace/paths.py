@@ -13,6 +13,10 @@ _RESERVED_NAMES = frozenset(
 
 # Never writable through the editor API, even inside the workspace.
 _WRITE_PROTECTED_DIRS = frozenset({".git"})
+# H.E.X Mind's own files (the run contract, the mission folder). Agents can read them but not
+# write them, except the exact files a persona is given (DevOps writes the run contract), because
+# a worker that could rewrite the checks, the plan or the handoffs could make its own work pass.
+_AGENT_READ_ONLY_TOP_DIRS = frozenset({".hex"})
 # Agents additionally may not touch the project profile (it defines which commands the
 # sandbox runs), dependencies, or secrets.
 _AGENT_PROTECTED_DIRS = _WRITE_PROTECTED_DIRS | {".hexmind", "node_modules"}
@@ -47,11 +51,17 @@ def normalize_relative(rel: str) -> PurePosixPath:
 
 
 def resolve_in_workspace(
-    root: Path, rel: str, *, for_write: bool = False, agent: bool = False
+    root: Path,
+    rel: str,
+    *,
+    for_write: bool = False,
+    agent: bool = False,
+    agent_writable: frozenset[str] = frozenset(),
 ) -> Path:
     """Resolve `rel` under `root`, following symlinks, and reject anything outside it.
 
     `agent=True` applies the stricter policy used for agent tool calls (reads and writes).
+    `agent_writable` lists exact paths an agent may write inside otherwise read-only areas.
     """
     normalized = normalize_relative(rel)
     lowered = [part.lower() for part in normalized.parts]
@@ -62,6 +72,14 @@ def resolve_in_workspace(
             raise PathViolation(f"'{normalized}' may contain secrets")
     if for_write and any(part in _WRITE_PROTECTED_DIRS for part in lowered):
         raise PathViolation(f"'{normalized}' is write-protected")
+    if (
+        agent
+        and for_write
+        and lowered[:1]
+        and lowered[0] in _AGENT_READ_ONLY_TOP_DIRS
+        and normalized.as_posix() not in agent_writable
+    ):
+        raise PathViolation(f"'{normalized}' is managed by H.E.X Mind and is read-only for agents")
 
     root_real = root.resolve(strict=True)
     candidate = (root_real.joinpath(*normalized.parts)).resolve(strict=False)

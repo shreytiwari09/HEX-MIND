@@ -53,6 +53,7 @@ from app.orchestration.adk import run_adk
 from app.orchestration.run import NO_CHANGES_FEEDBACK, RunStep, _innermost, set_status
 from app.orchestration.services import Services
 from app.providers.assignments import has_escalation, route_for
+from app.sandbox.contract import ContractError
 from app.sandbox.profile import ProfileError, load_profile
 from app.sandbox.runner import CheckOutcome, accepted, check_feedback
 from app.telemetry.hub import TelemetryHub
@@ -62,8 +63,16 @@ logger = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 3  # the first try and two retries (PRD §8.6)
 CHECK_NAME = "test"
+# Run after every feature, in this order, when the project defines them (PRD §8.4 step 7).
+QUICK_CHECKS = ("typecheck", CHECK_NAME)
 OUTPUT_IN_HANDOFF = 1500
 PROVIDER_FAILURE_MARKER = "ProviderCallFailed"  # raised by HexLLM once the router gave up
+
+
+def _check_ok(name: str, outcome: CheckOutcome) -> bool:
+    """Tests must pass *and* have run some (exit 0 with no tests proves nothing); any other
+    check just has to pass."""
+    return accepted(outcome) if name == CHECK_NAME else outcome.passed
 
 
 class MissionAborted(RuntimeError):
@@ -87,7 +96,6 @@ class MissionRunner:
         self.worktree: Path
         self.telemetry: TelemetryHub | None = None
         self.mcp: McpWorkspace | None = None
-        self.check_command = CHECK_NAME
 
     # ---------- lifecycle ----------
 
@@ -116,10 +124,9 @@ class MissionRunner:
             profile = await run_in_threadpool(
                 load_profile, self.workspace, self.worktree, settings.sandbox_images
             )
-        except ProfileError as exc:
+        except (ProfileError, ContractError) as exc:
             raise MissionAborted(str(exc)) from exc
-        if CHECK_NAME in profile.checks:
-            self.check_command = profile.checks[CHECK_NAME]
+        del profile  # checks are read again for every attempt: DevOps may change the contract
         self.mcp = McpWorkspace(
             root=self.worktree,
             workspace=self.workspace,
@@ -302,9 +309,12 @@ class MissionRunner:
         files_changed = [c.path for c in changes if not c.path.startswith(".hex/")]
         if not files_changed:
             return await self._rejected(key, NO_CHANGES_FEEDBACK, "no files were changed")
-        outcome = await self._quick_check()
-        if not accepted(outcome):
-            return await self._rejected(key, check_feedback(outcome), "the quick check failed")
+        results, problem = await self._quick_checks()
+        if problem is not None:
+            return await self._rejected(key, problem, "the project defines no usable checks")
+        failed = next((o for name, _, o in results if not _check_ok(name, o)), None)
+        if failed is not None:
+            return await self._rejected(key, check_feedback(failed), "the quick check failed")
 
         model_used, tokens_in, tokens_out, cost = await self._usage(started)
         handoff = Handoff.assemble(
@@ -313,11 +323,12 @@ class MissionRunner:
             model_used=model_used,
             commands=[
                 CommandResult(
-                    command=self.check_command,
+                    command=command,
                     exit_code=outcome.exit_code if outcome.exit_code is not None else -1,
                     duration_s=outcome.duration_ms / 1000,
                     summary=outcome.output_tail[-OUTPUT_IN_HANDOFF:],
                 )
+                for _, command, outcome in results
             ],
             files_changed=files_changed,
             tokens_in=tokens_in,
@@ -390,7 +401,34 @@ class MissionRunner:
 
     # ---------- measured facts ----------
 
-    async def _quick_check(self) -> CheckOutcome:
+    async def _quick_checks(self) -> tuple[list[tuple[str, str, CheckOutcome]], str | None]:
+        """Run the project's quick checks (typecheck, then tests) in the sandbox, stopping at the
+        first failure. The commands come from the run contract *as it is now*, since DevOps may
+        have written it during this mission. Returns (name, command, outcome) per check run, and
+        a message for the agent when the project has nothing usable to run."""
+        settings = self.services.settings
+        try:
+            profile = await run_in_threadpool(
+                load_profile, self.workspace, self.worktree, settings.sandbox_images
+            )
+        except (ProfileError, ContractError) as exc:
+            return [], f"The project's checks could not be read: {exc}"
+        if CHECK_NAME not in profile.checks:
+            return [], (
+                f"The project defines no `{CHECK_NAME}` check, so nothing can show the work "
+                f"passes. Add one to {profile.source}."
+            )
+        results: list[tuple[str, str, CheckOutcome]] = []
+        for name in QUICK_CHECKS:
+            if name not in profile.checks:
+                continue
+            outcome = await self._run_check(name)
+            results.append((name, profile.checks[name], outcome))
+            if not _check_ok(name, outcome):
+                break
+        return results, None
+
+    async def _run_check(self, name: str) -> CheckOutcome:
         assert self.mcp is not None
         async with self.services.sessionmaker.begin() as session:
             await append_event(
@@ -398,18 +436,18 @@ class MissionRunner:
                 self.run_id,
                 EventType.CHECK_STARTED,
                 agent_id="sandbox",
-                payload={"name": CHECK_NAME},
+                payload={"name": name},
             )
-        ok, text = await run_in_threadpool(self.mcp.call_tool, "run_check", {"name": CHECK_NAME})
+        ok, text = await run_in_threadpool(self.mcp.call_tool, "run_check", {"name": name})
         if ok:
             outcome = CheckOutcome(**json.loads(text))
         else:
-            outcome = CheckOutcome(CHECK_NAME, None, 0, "", error=text.removeprefix("ERROR: "))
+            outcome = CheckOutcome(name, None, 0, "", error=text.removeprefix("ERROR: "))
         async with self.services.sessionmaker.begin() as session:
             session.add(
                 CheckResult(
                     run_id=self.run_id,
-                    name=CHECK_NAME,
+                    name=name,
                     exit_code=outcome.exit_code,
                     duration_ms=outcome.duration_ms,
                     output_tail=(outcome.error or "") + outcome.output_tail,
@@ -421,7 +459,7 @@ class MissionRunner:
                 EventType.CHECK_COMPLETED,
                 agent_id="sandbox",
                 payload={
-                    "name": CHECK_NAME,
+                    "name": name,
                     "exit_code": outcome.exit_code,
                     "duration_ms": outcome.duration_ms,
                 },

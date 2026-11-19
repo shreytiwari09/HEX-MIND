@@ -17,6 +17,8 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, Field, ValidationError
 
+from app.sandbox.contract import CONTRACT_PATH, load_contract
+
 PROFILE_PATH = ".hexmind/profile.yaml"
 _CHECK_NAME = r"^[a-z][a-z0-9_-]{0,31}$"
 
@@ -44,8 +46,17 @@ class _ProfileFile(BaseModel):
 
 
 def load_profile(workspace: Path, worktree: Path, allowed_images: list[str]) -> Profile:
-    """The user's explicit profile if present, else one detected from the worktree's files
-    (a new project may only gain its package.json during the run)."""
+    """The checks a project defines, from the first of: the run contract `.hex/project.json`
+    (PRD §9.6), the user's explicit `.hexmind/profile.yaml`, or what is detected from the
+    worktree's files (a new project may only gain its package.json during the run)."""
+    contract = load_contract(worktree)  # raises ContractError (a ValueError) when invalid
+    if contract is not None:
+        image = contract.image or detect_profile(worktree).image
+        if image not in allowed_images:
+            raise ProfileError(
+                f"image '{image}' is not allowed; allowed: {', '.join(allowed_images)}"
+            )
+        return Profile(image=image, checks=contract.checks(), source=CONTRACT_PATH)
     path = workspace / PROFILE_PATH
     if path.exists():
         try:

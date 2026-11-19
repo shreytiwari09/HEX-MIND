@@ -26,16 +26,29 @@ class ToolError(ValueError):
 
 class WorkspaceTools:
     def __init__(
-        self, root: Path, *, workspace: Path, allowed_images: list[str], check_timeout_s: int
+        self,
+        root: Path,
+        *,
+        workspace: Path,
+        allowed_images: list[str],
+        check_timeout_s: int,
+        writable_extra: frozenset[str] = frozenset(),
     ) -> None:
         self.root = root.resolve()
         self.workspace = workspace
         self.allowed_images = allowed_images
         self.check_timeout_s = check_timeout_s
+        self.writable_extra = writable_extra
 
     def _path(self, rel: str, *, write: bool = False) -> Path:
         try:
-            return resolve_in_workspace(self.root, rel, for_write=write, agent=True)
+            return resolve_in_workspace(
+                self.root,
+                rel,
+                for_write=write,
+                agent=True,
+                agent_writable=self.writable_extra,
+            )
         except ValueError as exc:
             raise ToolError(str(exc)) from None
 
@@ -93,6 +106,19 @@ class WorkspaceTools:
             raise ToolError(f"`old` must occur exactly once in {path}; found {count} times")
         target.write_bytes(text.replace(old, new).encode("utf-8"))
         return f"updated {path}"
+
+    def list_checks(self) -> str:
+        """The checks this project defines (from its run contract), one `name: command` per line."""
+        try:
+            profile = load_profile(self.workspace, self.root, self.allowed_images)
+        except ValueError as exc:
+            raise ToolError(str(exc)) from None
+        lines = [f"{name}: {command}" for name, command in profile.checks.items()]
+        return (
+            "\n".join(lines) + f"\n(defined by {profile.source})"
+            if lines
+            else "(no checks defined)"
+        )
 
     def run_check(self, name: str) -> str:
         """Run a named profile check in the sandbox; returns a JSON result."""
