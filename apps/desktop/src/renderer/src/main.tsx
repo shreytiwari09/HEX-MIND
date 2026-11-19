@@ -6,6 +6,7 @@ import { BackendProvider } from './lib/backend'
 import './styles/tokens.css'
 import './styles/app.css'
 import './styles/observability.css'
+import './styles/missions.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -46,7 +46,7 @@ describe('TasksPanel', () => {
 
 describe('describeEvent (worker events)', () => {
   const base = {
-    schema_version: 3 as const,
+    schema_version: 4 as const,
     event_id: 'e',
     run_id: 'r1',
     seq: 1,

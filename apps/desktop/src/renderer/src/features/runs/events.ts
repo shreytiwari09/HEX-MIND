@@ -104,6 +104,26 @@ export function describeEvent(event: AgentEvent): string {
     }
     case 'prompt_variant_selected':
       return `${event.payload.role}: ${event.payload.variant}`
+    case 'mission_status_changed': {
+      const p = event.payload
+      return `${p.previous ?? '—'} → ${p.status}${p.reason ? ` (${p.reason})` : ''}`
+    }
+    case 'milestone_status_changed':
+      return `${event.payload.title}: ${event.payload.status}`
+    case 'feature_status_changed': {
+      const p = event.payload
+      return `${p.title} (${p.persona}): ${p.status.replace('_', ' ')}${p.attempts > 1 ? `, attempt ${p.attempts}` : ''}`
+    }
+    case 'handoff_recorded': {
+      const p = event.payload
+      return `${p.feature_id}: handoff from ${p.persona}, ${p.files_changed.length} file(s) changed on ${p.model_used}`
+    }
+    case 'checkpoint_created':
+      return `checkpoint: ${event.payload.label}`
+    case 'need_raised':
+      return event.payload.summary
+    case 'need_answered':
+      return `answered: ${event.payload.action.replace('_', ' ')}`
     default:
       return JSON.stringify(event.payload)
   }
