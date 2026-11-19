@@ -10,10 +10,15 @@ import uuid
 from typing import Any, Literal
 
 from opentelemetry import propagate, trace
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-CrewRole = Literal["planner", "coder"]
-ROLES: tuple[CrewRole, ...] = ("planner", "coder")
+from app.agents.build import REPORT_EXPECTED
+from app.missions.models import Feature, Handoff
+
+# `planner` and `coder` are the fixed crews of the run workflow. `persona` serves any persona
+# (PRD §12.3): the request names the persona and the feature, and the crew service builds the agent.
+CrewRole = Literal["planner", "coder", "persona"]
+ROLES: tuple[CrewRole, ...] = ("planner", "coder", "persona")
 METADATA_KEY = "hexmind"
 
 
@@ -36,6 +41,16 @@ class CrewRequest(BaseModel):
     workspace: str
     complexity: str | None = None
     expected_output: str
+
+
+class PersonaRequest(CrewRequest):
+    """A request to the `persona` crew: which persona does which feature, and what came before.
+    The crew service builds the prompt itself from these fields."""
+
+    persona_id: str
+    feature: Feature
+    earlier_handoffs: list[Handoff] = Field(default_factory=list)
+    expected_output: str = REPORT_EXPECTED
 
 
 def trace_carrier() -> dict[str, str]:

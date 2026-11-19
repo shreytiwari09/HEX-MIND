@@ -1160,6 +1160,9 @@ Every trigger becomes an event, a span attribute and an audit record. Blocking t
 | D21 ⟲ | **Experiment matrix as targeted experiments E1–E6** | Providers × patterns × backends × variants grid | Combinatorial cost on rate-limited providers |
 | D22 | **Cloud = H.E.X backend on Google Cloud (P9)**, details decided then | — | User decision |
 | D23 ⟲ | **One planning document (this PRD)** | Plan v1, plan v2, brief, report | Documentation sprawl |
+| D24 | **P3 missions take a hand-written plan** (`POST /api/missions` with milestones and features as JSON); the PM scoping chat and plan approval stay in P5 | A minimal PM call generating the plan in P3 | Keeps P3 deterministic and testable; nothing generated from an idea until P5 (decided 2026-11-19) |
+| D25 | **MissionRunner is a deterministic custom ADK `BaseAgent`** (the pattern `orchestration/run.py` already uses), not Sequential/Loop agents or ADK 2.x graph workflows. Resolves Q4 | Spike ADK 2.x graph workflows first | Reuses tested code; `SequentialAgent` and `LoopAgent` are already deprecated in favour of `Workflow`, so the runner avoids both. Revisit in a later spike (decided 2026-11-19) |
+| D26 | **`.hex/` is applied into the user's project by default, with a Settings toggle.** Resolves Q5 | Never apply `.hex/` | The project keeps its own docs and run contract (decided 2026-11-19) |
 
 **Carried over (still valid):**
 - Every model call goes through `ProviderRouter`.
@@ -1179,8 +1182,8 @@ Every trigger becomes an event, a span attribute and an audit record. Blocking t
 | Q1 | Cloud deployment details (region, auth, cost limits, which services) | Start of P9 |
 | Q2 | Which built-in skills to write vs import (for example a specific security-audit or UI/UX skill repo), and their licences | P6 |
 | Q3 | First external agent to support via ACP (OpenCode, Claude Code, Gemini CLI) once grading is done | After P8 |
-| Q4 | Stay on ADK workflow agents or migrate to ADK 2.x graph workflows for the MissionRunner | P3 design |
-| Q5 | Should the `.hex/` folder be applied into users' projects by default? (Default: yes, can be switched off) | P3 |
+| Q4 | ~~ADK workflow agents or 2.x graph workflows for the MissionRunner~~ Resolved: D25 | — |
+| Q5 | ~~Apply `.hex/` into users' projects by default?~~ Resolved: D26 | — |
 
 ---
 

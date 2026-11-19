@@ -17,7 +17,11 @@ from app.telemetry.hub import TelemetryHub
 
 async def test_agent_cards_are_served_and_listed(app: FastAPI, client: httpx.AsyncClient) -> None:
     agents = (await client.get("/api/a2a/agents")).json()
-    assert [(a["role"], a["reachable"]) for a in agents] == [("planner", True), ("coder", True)]
+    assert [(a["role"], a["reachable"]) for a in agents] == [
+        ("planner", True),
+        ("coder", True),
+        ("persona", True),
+    ]
     coder = agents[1]["card"]
     assert coder["name"] == "coder_crew"
     assert coder["url"].endswith("/coder/")

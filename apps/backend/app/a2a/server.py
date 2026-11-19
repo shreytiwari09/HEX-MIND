@@ -14,7 +14,7 @@ import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.apps import A2AStarletteApplication
@@ -32,12 +32,22 @@ from starlette.responses import JSONResponse
 from starlette.routing import Mount
 
 from app import __version__
-from app.a2a.protocol import METADATA_KEY, ROLES, CrewRequest, CrewRole, agent_name
+from app.a2a.protocol import (
+    METADATA_KEY,
+    ROLES,
+    CrewRequest,
+    CrewRole,
+    PersonaRequest,
+    agent_name,
+)
 from app.agents import roles
+from app.agents.build import build_agent, feature_prompt, tool_names_for
 from app.agents.llm import HexLLM
 from app.agents.mcp_bridge import McpWorkspace
+from app.agents.persona import get_persona
 from app.agents.tools import CODER, READ_ONLY, make_tools, tool_summary
 from app.events.log import EventType
+from app.missions.models import AgentReport, MissionContext
 from app.orchestration.services import Services
 from app.providers.router import CallContext
 from app.telemetry.hub import TelemetryHub
@@ -60,8 +70,16 @@ SKILLS: dict[CrewRole, AgentSkill] = {
         "acceptance criteria and tests pass; returns a short summary.",
         tags=["coding", "crewai"],
     ),
+    "persona": AgentSkill(
+        id="persona-feature",
+        name="Work on a feature as a persona",
+        description="Build a fresh agent from any built-in persona and run one feature in the "
+        "mission worktree; returns the agent's report (JSON) for the orchestrator to turn into "
+        "a handoff. Only worker personas can change files.",
+        tags=["personas", "crewai"],
+    ),
 }
-PARENTS: dict[CrewRole, str] = {"planner": agent_name("planner"), "coder": agent_name("coder")}
+PARENTS: dict[CrewRole, str] = {role: agent_name(role) for role in ROLES}
 
 
 def agent_card(role: CrewRole, base_url: str) -> AgentCard:
@@ -91,7 +109,8 @@ class CrewExecutor(AgentExecutor):
         updater = TaskUpdater(event_queue, task.id, task.context_id)
 
         metadata: dict[str, Any] = dict(context.metadata or {})
-        request = CrewRequest.model_validate(metadata.get(METADATA_KEY) or {})
+        request_model = PersonaRequest if self.role == "persona" else CrewRequest
+        request = request_model.model_validate(metadata.get(METADATA_KEY) or {})
         hub = TelemetryHub(self.services, request.run_id, asyncio.get_running_loop())
         parent_ctx = propagate.extract(metadata)
         started = time.monotonic()
@@ -158,6 +177,9 @@ class CrewExecutor(AgentExecutor):
         await run_in_threadpool(mcp.start)
         try:
             loop = asyncio.get_running_loop()
+            persona = (
+                get_persona(request.persona_id) if isinstance(request, PersonaRequest) else None
+            )
             llm = HexLLM(
                 router=self.services.providers,
                 loop=loop,
@@ -167,7 +189,7 @@ class CrewExecutor(AgentExecutor):
                     agent_id=request.agent_id,
                     complexity=request.complexity,
                 ),
-                purpose=self.role,
+                purpose=persona.purpose if persona else _crew_purpose(self.role),
                 native_tools=settings.native_tool_calling,
             )
 
@@ -181,10 +203,29 @@ class CrewExecutor(AgentExecutor):
                     summary=tool_summary(name, args, text),
                 )
 
-            factory = roles.planner if self.role == "planner" else roles.coder
-            names = READ_ONLY if self.role == "planner" else CODER
-            agent = factory(llm, make_tools(mcp, names, listener), settings.agent_max_iterations)
-            return await roles.run_agent(
+            if persona is not None:
+                assert isinstance(request, PersonaRequest)
+                ctx = MissionContext(
+                    worktree=worktree,
+                    workspace=Path(request.workspace),
+                    earlier_handoffs=request.earlier_handoffs,
+                )
+                agent = build_agent(
+                    persona,
+                    request.feature,
+                    ctx,
+                    llm=llm,
+                    tools=make_tools(mcp, tool_names_for(persona), listener),
+                    max_iter=settings.agent_max_iterations,
+                )
+                prompt = feature_prompt(persona, request.feature, ctx)
+            else:
+                factory = roles.planner if self.role == "planner" else roles.coder
+                names = READ_ONLY if self.role == "planner" else CODER
+                agent = factory(
+                    llm, make_tools(mcp, names, listener), settings.agent_max_iterations
+                )
+            raw = await roles.run_agent(
                 agent,
                 prompt,
                 request.expected_output,
@@ -192,8 +233,17 @@ class CrewExecutor(AgentExecutor):
                     request.agent_id, parent=PARENTS[self.role], task_id=request.task_id
                 ),
             )
+            if persona is None:
+                return raw
+            # A worker's answer must be a valid report; anything else fails the task so the
+            # orchestrator's escalation ladder can react.
+            return roles.parse_json_output(raw, AgentReport).model_dump_json()
         finally:
             await run_in_threadpool(mcp.close)
+
+
+def _crew_purpose(role: CrewRole) -> Literal["planner", "coder"]:
+    return "planner" if role == "planner" else "coder"
 
 
 def _checked_worktree(path: Path, data_dir: Path) -> Path:
