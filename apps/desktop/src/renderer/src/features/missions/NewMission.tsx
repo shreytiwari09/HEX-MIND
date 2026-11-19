@@ -2,12 +2,13 @@ import { useState } from 'react'
 
 import type { ApiClient } from '../../lib/api'
 import { describeError } from './actions'
-import type { Mission } from './types'
+import { Scoping } from './Scoping'
+import type { Mission, ScopingSession } from './types'
 
 /**
- * A small two-milestone plan to try the flow. Until the PM scoping chat arrives (P5), a mission
- * starts from a plan you write: milestones, each with features for a worker persona
- * (data, backend, designer, frontend, devops) and the validators to run (code-reviewer, security, qa).
+ * A small two-milestone plan for the "write the plan yourself" path: milestones, each with
+ * features for a worker persona (data, backend, designer, frontend, devops) and the validators
+ * to run (code-reviewer, security, qa).
  */
 export const EXAMPLE_PLAN = {
   title: 'Todo module',
@@ -52,7 +53,94 @@ interface Props {
   onCancel: () => void
 }
 
+/** Describe the idea; the PM scopes it with you and proposes a plan. */
 export function NewMission({ api, projectId, onCreated, onCancel }: Props) {
+  const [session, setSession] = useState<ScopingSession | null>(null)
+  const [idea, setIdea] = useState('')
+  const [budget, setBudget] = useState('')
+  const [own, setOwn] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  if (own) {
+    return <PlanJsonForm api={api} projectId={projectId} onCreated={onCreated} onCancel={() => setOwn(false)} />
+  }
+  if (session) {
+    return <Scoping api={api} session={session} onSession={setSession} onCreated={onCreated} onClose={onCancel} />
+  }
+
+  const start = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setError(null)
+    const amount = budget.trim() === '' ? undefined : Number(budget)
+    if (amount !== undefined && !(amount > 0)) {
+      setError('The budget must be a positive number of dollars, or empty for none.')
+      return
+    }
+    setBusy(true)
+    try {
+      setSession(
+        await api.post<ScopingSession>('/scoping', {
+          project_id: projectId,
+          idea: idea.trim(),
+          budget_usd: amount
+        })
+      )
+    } catch (err) {
+      setError(describeError(err).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form className="new-mission" onSubmit={(event) => void start(event)}>
+      <h2 className="mission__title">New mission</h2>
+      <p className="mission__muted">
+        The PM asks a few questions, then proposes a plan you can review and edit. The team works in an
+        isolated copy of your project: nothing changes in your files until you apply the result.
+      </p>
+      <label className="new-mission__field">
+        What do you want built?
+        <textarea
+          rows={3}
+          required
+          minLength={3}
+          value={idea}
+          onChange={(event) => setIdea(event.target.value)}
+          placeholder="A todo list with filters"
+        />
+      </label>
+      <label className="new-mission__field">
+        Budget in USD (optional)
+        <input type="number" min="0" step="0.5" value={budget} onChange={(event) => setBudget(event.target.value)} />
+      </label>
+      {error && (
+        <p role="alert" className="mission__error">
+          {error}
+        </p>
+      )}
+      {busy && (
+        <p role="status" className="mission__muted">
+          The PM is reading your idea…
+        </p>
+      )}
+      <div className="new-mission__actions">
+        <button type="submit" className="button button--primary" disabled={busy || idea.trim().length < 3}>
+          Start scoping
+        </button>
+        <button type="button" className="button" onClick={() => setOwn(true)}>
+          Write the plan myself
+        </button>
+        <button type="button" className="button" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  )
+}
+
+function PlanJsonForm({ api, projectId, onCreated, onCancel }: Props) {
   const [idea, setIdea] = useState('')
   const [plan, setPlan] = useState(() => JSON.stringify(EXAMPLE_PLAN, null, 2))
   const [budget, setBudget] = useState('')

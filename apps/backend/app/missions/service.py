@@ -64,16 +64,25 @@ async def create_mission(
     idea: str,
     plan: MissionPlan,
     budget_usd: Decimal | None = None,
+    run: Run | None = None,
+    prd: str | None = None,
 ) -> Mission:
+    """A mission awaiting approval, in a new worktree on its own branch. `run` is the scoping
+    chat's run when the plan came from the PM, so the mission's trail starts at the idea; `prd`
+    is the PM's plain-language PRD, written to `.hex/mission/prd.md`."""
     root = Path(project.workspace_path)
     if not await run_in_threadpool(git.is_repo, root):
         raise NotAGitRepo(project.workspace_path)
 
     mission_id = uuid.uuid4()
     branch = f"hex/mission-{mission_id.hex[:12]}"
-    run = Run(project_id=project.id, title=plan.title, status="queued")
-    session.add(run)
-    await session.flush()
+    new_run = run is None
+    if run is None:
+        run = Run(project_id=project.id, title=plan.title, status="queued")
+        session.add(run)
+        await session.flush()
+    else:
+        run.title, run.status = plan.title, "queued"
     worktree = worktree_path(settings, run.id)
     base = await run_in_threadpool(git.snapshot, root)
     await run_in_threadpool(git.create_worktree, root, base, worktree, branch)
@@ -117,13 +126,18 @@ async def create_mission(
                 )
                 position += 1
         await session.flush()
-        await append_event(session, run.id, EventType.RUN_CREATED, payload={"title": plan.title})
+        if new_run:  # a scoping run already has its run_created event
+            await append_event(
+                session, run.id, EventType.RUN_CREATED, payload={"title": plan.title}
+            )
         await _mission_status_event(session, run.id, mission.status, None, "plan received")
         await sync_mission_folder(session, mission, worktree)
         if plan.validation_contract:
             await run_in_threadpool(
                 folder.write_validation_contract, worktree, mission.validation_contract
             )
+        if prd:
+            await run_in_threadpool(folder.write_prd, worktree, prd)
     except BaseException:
         await run_in_threadpool(git.remove_worktree, root, worktree)
         await run_in_threadpool(git.delete_branch, root, branch)

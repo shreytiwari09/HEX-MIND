@@ -180,3 +180,53 @@ export interface ValidatorReportView {
   commands: { command: string; exit_code: number; duration_s: number; summary: string }[]
   created_at: string
 }
+
+// ---------- PM scoping chat and plan review (PRD F2; mirrors api/scoping.py) ----------
+
+export interface ScopingMessage {
+  role: 'user' | 'pm'
+  content: string
+  questions?: string[]
+  at: string
+}
+
+export interface PlanFeature {
+  id: string
+  title: string
+  persona: string
+  description?: string
+  expected_behavior: string[]
+}
+
+export interface PlanMilestone {
+  id: string
+  title: string
+  validators: string[]
+  features: PlanFeature[]
+}
+
+export interface MissionPlanDoc {
+  title: string
+  milestones: PlanMilestone[]
+  validation_contract?: Criterion[]
+}
+
+export interface ScopingSession {
+  id: string
+  project_id: string
+  run_id: string
+  idea: string
+  /** asking: the PM wants answers. planned: a plan is ready. started/abandoned: closed. */
+  status: 'asking' | 'planned' | 'started' | 'abandoned'
+  messages: ScopingMessage[]
+  plan: MissionPlanDoc | null
+  prd: string | null
+  /** Why the last PM turn gave no usable answer, if it did not. */
+  error: string | null
+  budget_usd: number | null
+  mission_id: string | null
+  /** What the PM's calls cost so far, from the provider layer. */
+  cost_usd: number
+  created_at: string
+  updated_at: string
+}

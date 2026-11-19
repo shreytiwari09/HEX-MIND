@@ -335,6 +335,32 @@ class Mission(Base):
     validation_contract: Mapped[list[Any]] = mapped_column(default=list)
 
 
+class ScopingSession(Base):
+    """The PM scoping chat for a new mission (PRD F2): the conversation, then the plan it
+    produced, which the user may edit before it becomes a mission. Its run collects the PM's
+    model calls and later becomes the mission's run, so the trail starts at the idea."""
+
+    __tablename__ = "scoping_sessions"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    project_id: Mapped[uuid.UUID] = _fk("projects.id")
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"))
+    idea: Mapped[str] = mapped_column(Text)
+    # asking: the PM is asking questions. planned: a valid plan is ready for review.
+    # started: it became a mission. abandoned: the user dropped it.
+    status: Mapped[str] = mapped_column(String(16), default="asking")
+    # [{role: "user" | "pm", content, questions?, at}]
+    messages: Mapped[list[Any]] = mapped_column(default=list)
+    plan: Mapped[dict[str, Any] | None] = mapped_column()  # a valid MissionPlan
+    prd: Mapped[str | None] = mapped_column(Text)
+    # Why the last PM turn produced no usable answer (provider down, invalid plan), if it did not.
+    error: Mapped[str | None] = mapped_column(Text)
+    budget_usd: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
+    mission_id: Mapped[uuid.UUID | None] = _fk("missions.id", nullable=True, ondelete="SET NULL")
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
 class Milestone(Base):
     __tablename__ = "milestones"
     __table_args__ = (UniqueConstraint("mission_id", "key"),)

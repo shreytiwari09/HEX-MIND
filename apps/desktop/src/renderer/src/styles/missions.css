@@ -553,3 +553,70 @@
   padding-left: var(--space-4);
   font-size: var(--text-sm);
 }
+
+/* ---------- PM scoping chat and plan review ---------- */
+
+.scoping__chat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.scoping__message {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+
+.scoping__message--user {
+  background: var(--surface-2);
+}
+
+.scoping__message p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.scoping__message ul {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-4);
+}
+
+.scoping__who {
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+}
+
+.scoping__reply,
+.plan-review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.plan-review {
+  padding: var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+.plan-review h3,
+.plan-review h4 {
+  margin: 0;
+}
+
+.plan-review ul,
+.plan-review ol {
+  margin: var(--space-1) 0;
+  padding-left: var(--space-4);
+}
+
+.new-mission__field textarea:focus-visible,
+.new-mission__field input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

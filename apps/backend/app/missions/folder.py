@@ -70,3 +70,10 @@ def write_validation_contract(worktree: Path, criteria: list[dict]) -> Path:  # 
     path = mission_dir(worktree) / "validation-contract.md"
     _atomic_write(path, render_validation_contract(criteria))
     return path
+
+
+def write_prd(worktree: Path, prd: str) -> Path:
+    """The PM's plain-language PRD for this mission (PRD §9.2 `prd.md`)."""
+    path = mission_dir(worktree) / "prd.md"
+    _atomic_write(path, prd.rstrip() + "\n")
+    return path

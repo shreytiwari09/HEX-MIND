@@ -22,6 +22,7 @@ from app.api import (
     projects,
     providers,
     runs,
+    scoping,
     stream,
     tasks,
 )
@@ -119,6 +120,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         assignments,
         budgets,
         catalog,
+        scoping,
     ):
         app.include_router(module.router, prefix="/api", dependencies=[Depends(require_token)])
     app.include_router(missions.needs_router, prefix="/api", dependencies=[Depends(require_token)])
