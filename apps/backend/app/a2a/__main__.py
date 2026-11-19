@@ -8,6 +8,7 @@ import uvicorn
 from starlette.applications import Starlette
 
 from app.a2a.server import build_crew_app
+from app.catalog.service import CatalogService
 from app.config import get_settings
 from app.context.manager import ContextManager
 from app.db.session import create_engine, create_sessionmaker
@@ -23,8 +24,10 @@ def create_crew_service() -> Starlette:
     setup_tracing(settings)
     engine = create_engine(settings.database_url)
     sessionmaker = create_sessionmaker(engine)
+    # The crew service reads the same catalog cache file the backend refreshes.
+    catalog = CatalogService(settings.data_dir / "catalog")
     providers, adapters = build_providers(
-        settings, sessionmaker, make_key_store(settings.key_store)
+        settings, sessionmaker, make_key_store(settings.key_store), catalog
     )
     services = Services(
         settings=settings,

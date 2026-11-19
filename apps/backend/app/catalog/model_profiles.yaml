@@ -1,0 +1,77 @@
+# Curated model profiles (PRD §10.3, §10.8).
+#
+# These are CURATED ESTIMATES, not measurements. Tiers run 1 (weak) to 5 (best) and say how
+# a model family compares with the others here, on four capabilities the assigner cares about.
+# The evaluation (PRD §15) is meant to replace them with measured results. A model that matches
+# no pattern has no profile; the assigner treats it as unknown and never assumes a tier.
+#
+# Patterns are matched in order against the lower-cased model id (and its last path segment, so
+# "anthropic/claude-sonnet-5-5" on OpenRouter matches "claude-sonnet*"). First match wins, so
+# specific patterns come before general ones.
+#
+# edit_format: search_replace | fenced | whole_file (how reliably the model follows each).
+# quirks: known behaviours the code already works around.
+last_reviewed: "2026-11-19"
+evidence: estimate
+
+profiles:
+  - match: "claude-fable*"
+    tiers: {reasoning: 5, coding: 5, ui: 5, tool_use: 5}
+    edit_format: search_replace
+  - match: "claude-opus*"
+    tiers: {reasoning: 5, coding: 5, ui: 4, tool_use: 5}
+    edit_format: search_replace
+  - match: "claude-sonnet*"
+    tiers: {reasoning: 4, coding: 5, ui: 4, tool_use: 5}
+    edit_format: search_replace
+  - match: "claude-haiku*"
+    tiers: {reasoning: 3, coding: 3, ui: 3, tool_use: 4}
+    edit_format: search_replace
+
+  - match: "gpt-5*nano*"
+    tiers: {reasoning: 2, coding: 3, ui: 2, tool_use: 3}
+    edit_format: search_replace
+  - match: "gpt-5*mini*"
+    tiers: {reasoning: 3, coding: 4, ui: 3, tool_use: 4}
+    edit_format: search_replace
+  - match: "gpt-5*"
+    tiers: {reasoning: 5, coding: 5, ui: 4, tool_use: 5}
+    edit_format: search_replace
+  - match: "gpt-oss*"
+    tiers: {reasoning: 4, coding: 4, ui: 2, tool_use: 3}
+    edit_format: whole_file
+    quirks: ["some hosts answer tool calls as text; the router salvages them"]
+
+  - match: "gemini*pro*"
+    tiers: {reasoning: 5, coding: 4, ui: 5, tool_use: 4}
+    edit_format: fenced
+    quirks: ["replayed tool calls need thought signatures"]
+  - match: "gemini*flash*"
+    tiers: {reasoning: 3, coding: 4, ui: 4, tool_use: 4}
+    edit_format: fenced
+    quirks: ["replayed tool calls need thought signatures"]
+
+  - match: "deepseek*"
+    tiers: {reasoning: 4, coding: 4, ui: 2, tool_use: 3}
+    edit_format: search_replace
+  - match: "glm*"
+    tiers: {reasoning: 4, coding: 4, ui: 3, tool_use: 4}
+    edit_format: search_replace
+  - match: "kimi*"
+    tiers: {reasoning: 4, coding: 4, ui: 2, tool_use: 4}
+    edit_format: search_replace
+  - match: "grok*"
+    tiers: {reasoning: 4, coding: 4, ui: 3, tool_use: 4}
+    edit_format: search_replace
+  - match: "mistral*large*"
+    tiers: {reasoning: 4, coding: 4, ui: 2, tool_use: 4}
+    edit_format: search_replace
+  - match: "codestral*"
+    tiers: {reasoning: 3, coding: 4, ui: 1, tool_use: 3}
+    edit_format: whole_file
+  - match: "qwen*coder*"
+    tiers: {reasoning: 3, coding: 4, ui: 1, tool_use: 3}
+    edit_format: whole_file
+  - match: "llama*"
+    tiers: {reasoning: 2, coding: 2, ui: 1, tool_use: 2}
+    edit_format: whole_file

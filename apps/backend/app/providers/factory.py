@@ -1,7 +1,7 @@
 """Builds the ProviderRouter from settings. Shared by the backend and the crew A2A service, so
 both route, retry, fall back and log model calls identically."""
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -13,11 +13,15 @@ from app.providers.routed import RouteExecutor
 from app.providers.router import ProviderRouter
 from app.providers.secrets import KeyStore
 
+if TYPE_CHECKING:
+    from app.catalog.service import CatalogService
+
 
 def build_providers(
     settings: Settings,
     sessionmaker: async_sessionmaker[AsyncSession],
     keystore: KeyStore | None = None,
+    catalog: "CatalogService | None" = None,
 ) -> tuple[ProviderRouter, list[Any]]:
     """Returns the router and its adapters (which the caller closes on shutdown). With a key
     store, calls that carry a persona route are served from the user's connections."""
@@ -28,6 +32,8 @@ def build_providers(
         timeout_s=settings.ollama_timeout_s,
     )
     pricing = Pricing.load()
+    if catalog is not None:
+        pricing.fallback = catalog.price
     hosted = [
         OpenAICompatAdapter(
             name="groq",

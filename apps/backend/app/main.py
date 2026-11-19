@@ -12,6 +12,7 @@ from app.a2a.client import CrewServiceProcess, a2a_http_client
 from app.api import (
     a2a,
     assignments,
+    catalog,
     connections,
     conversations,
     health,
@@ -23,6 +24,7 @@ from app.api import (
     tasks,
 )
 from app.auth import require_token
+from app.catalog.service import CatalogService
 from app.chat.service import ChatService
 from app.config import Settings, get_settings
 from app.context.manager import ContextManager
@@ -42,7 +44,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     engine = create_engine(settings.database_url)
     sessionmaker = create_sessionmaker(engine)
     keystore = make_key_store(settings.key_store)
-    providers_router, adapters = build_providers(settings, sessionmaker, keystore)
+    model_catalog = CatalogService(settings.data_dir / "catalog")
+    providers_router, adapters = build_providers(settings, sessionmaker, keystore, model_catalog)
     memory = None
     if settings.memory_enabled:
         memory = Memory(
@@ -58,11 +61,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         memory=memory,
         a2a_http=a2a_http_client(settings),
         keystore=keystore,
+        catalog=model_catalog,
     )
     crew_service = CrewServiceProcess(settings)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        if settings.catalog_auto_refresh:
+            services.background.spawn(model_catalog.refresh_if_stale(), name="catalog-refresh")
         if settings.crew_service_autostart:
             await crew_service.start(services.a2a_http)
         yield
@@ -108,6 +114,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         missions,
         connections,
         assignments,
+        catalog,
     ):
         app.include_router(module.router, prefix="/api", dependencies=[Depends(require_token)])
     app.include_router(missions.needs_router, prefix="/api", dependencies=[Depends(require_token)])

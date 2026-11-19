@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     provider_order_by_complexity: dict[str, list[str]] = {}
     # How long a provider is skipped after quota exhaustion (unless it sends Retry-After).
     quota_cooldown_s: float = 300
+    # Refresh the models.dev catalog in the background at startup (a plain public GET; no user
+    # data is sent). Off, the cached copy is used and the Refresh button still works.
+    catalog_auto_refresh: bool = True
     # Where API keys are kept: the OS keychain, or (tests, throwaway sessions) this process only.
     key_store: Literal["keyring", "memory"] = "keyring"
     # Apply also writes the mission's `.hex/` files (docs, run contract) into the user's project.
