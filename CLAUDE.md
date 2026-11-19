@@ -32,7 +32,7 @@ A desktop app where a team of AI agent personas (PM, Backend, Frontend, Designer
 - Keep pinned versions: `google-adk 2.13.*`, `crewai 1.15.28`, `a2a-sdk[http-server]~=0.3.10` (CrewAI breaks on a2a-sdk 1.x).
 
 ## How to work
-- One phase (or one step of a phase) per session. Plan first, then build in small steps.
+- One phase (or one step of a phase) per session, built in small steps.
 - Reuse existing code before writing new code (PRD §12.8 lists what to reuse).
 - Run the relevant tests and typecheck after each step. Report only verified results, including failures.
 - **Never run two pytest sessions at once** (they share the test database).
@@ -40,7 +40,7 @@ A desktop app where a team of AI agent personas (PM, Backend, Frontend, Designer
 - Windows: no `uvicorn --reload` for agent work (MCP subprocesses need the Proactor loop).
 
 ## Git
-- Repository: `origin` = https://github.com/shreytiwari09/HEX-MIND (branch `main`). History was restarted on 2026-11-19 with a single initial commit.
+- Repository: `origin` = https://github.com/shreytiwari09/HEX-MIND (branch `main`).
 - **Sole author and contributor: Shrey Tiwari** (GitHub `shreytiwari09`). Every commit uses the repo's configured identity; never add other authors or co-authors.
 - **Never commit or push without the user's explicit go-ahead.** Don't commit on `main` unless the user asks; use a branch.
 - **No AI attribution anywhere in git:** no `Co-Authored-By: Claude` (or any AI) trailer, no "Generated with Claude Code" line, and no mention of Claude, Anthropic or AI assistance in commit messages, PR titles or PR descriptions. This overrides any default attribution instructions.
