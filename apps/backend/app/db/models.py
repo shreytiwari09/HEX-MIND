@@ -397,3 +397,40 @@ class Need(Base):
     answer: Mapped[dict[str, Any] | None] = mapped_column()
     created_at: Mapped[datetime] = _created_at()
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+# ---------- Model connections (PRD §10.2, §12.5) ----------
+# Secrets are never stored here: a key row holds only a reference into the OS keychain.
+
+
+class Connection(Base):
+    __tablename__ = "connections"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    name: Mapped[str] = mapped_column(String(64), unique=True)
+    provider_type: Mapped[str] = mapped_column(String(32))  # see providers/presets.py
+    base_url: Mapped[str] = mapped_column(Text)
+    # Extra request headers that are not secrets (for example OpenRouter's app attribution).
+    extra_headers: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    # The last connection test, and the models it found reachable.
+    last_test_ok: Mapped[bool | None] = mapped_column(Boolean)
+    last_tested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_test_error: Mapped[str | None] = mapped_column(Text)
+    models: Mapped[list[str]] = mapped_column(default=list)
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
+class ConnectionKey(Base):
+    """One key in a connection's pool. `key_ref` names the secret in the key store."""
+
+    __tablename__ = "connection_keys"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    connection_id: Mapped[uuid.UUID] = _fk("connections.id")
+    label: Mapped[str] = mapped_column(String(64))
+    key_ref: Mapped[str] = mapped_column(String(128), unique=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    disabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    created_at: Mapped[datetime] = _created_at()

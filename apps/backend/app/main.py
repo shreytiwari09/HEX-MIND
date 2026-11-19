@@ -1,13 +1,17 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.a2a.client import CrewServiceProcess, a2a_http_client
 from app.api import (
     a2a,
+    connections,
     conversations,
     health,
     missions,
@@ -27,6 +31,7 @@ from app.memory.store import Memory, OllamaEmbedding
 from app.orchestration.background import BackgroundTasks
 from app.orchestration.services import Services
 from app.providers.factory import build_providers
+from app.providers.secrets import make_key_store
 from app.telemetry.tracing import setup_tracing
 
 
@@ -50,6 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         background=BackgroundTasks(),
         memory=memory,
         a2a_http=a2a_http_client(settings),
+        keystore=make_key_store(settings.key_store),
     )
     crew_service = CrewServiceProcess(settings)
 
@@ -75,6 +81,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.chat = ChatService(services)
     app.state.event_hub = EventHub(settings.database_url)
 
+    @app.exception_handler(RequestValidationError)
+    async def validation_failed(_: Request, exc: RequestValidationError) -> JSONResponse:
+        """FastAPI's default answer repeats the request body in each error's `input`. A body can
+        carry an API key, so only where and why a field is wrong is sent back."""
+        errors = [{"loc": e["loc"], "msg": e["msg"], "type": e["type"]} for e in exc.errors()]
+        return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -82,8 +95,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["Authorization", "Content-Type"],
     )
 
-    for module in (health, projects, runs, providers, conversations, tasks, a2a, missions):
+    for module in (
+        health,
+        projects,
+        runs,
+        providers,
+        conversations,
+        tasks,
+        a2a,
+        missions,
+        connections,
+    ):
         app.include_router(module.router, prefix="/api", dependencies=[Depends(require_token)])
     app.include_router(missions.needs_router, prefix="/api", dependencies=[Depends(require_token)])
+    app.include_router(
+        connections.types_router, prefix="/api", dependencies=[Depends(require_token)]
+    )
     app.include_router(stream.router)  # authenticates by its first frame, not a header
     return app

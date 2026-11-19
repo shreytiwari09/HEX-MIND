@@ -11,6 +11,7 @@ from app.context.manager import ContextManager
 from app.memory.store import Memory
 from app.orchestration.background import BackgroundTasks
 from app.providers.router import ProviderRouter
+from app.providers.secrets import KeyStore
 
 # (services, run_id, *, requires_planning, requires_review) -> None
 RunExecutor = Callable[..., Awaitable[None]]
@@ -31,6 +32,9 @@ class Services:
     # Runs a run in the background; replaceable so conversation tests need no agents.
     run_executor: RunExecutor | None = None
     # Mission runners that are currently executing, by mission id.
+    # Provider API keys (PRD §10.2) and the HTTP client connection tests use (tests replace it).
+    keystore: "KeyStore | None" = None
+    connection_http: httpx.AsyncClient | None = None
     mission_tasks: dict[uuid.UUID, "asyncio.Task[None]"] = field(default_factory=dict)
 
     def mission_active(self, mission_id: uuid.UUID) -> bool:

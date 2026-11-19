@@ -2,6 +2,7 @@ import os
 from functools import lru_cache
 from ipaddress import ip_address
 from pathlib import Path
+from typing import Literal
 
 from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -51,6 +52,8 @@ class Settings(BaseSettings):
     provider_order_by_complexity: dict[str, list[str]] = {}
     # How long a provider is skipped after quota exhaustion (unless it sends Retry-After).
     quota_cooldown_s: float = 300
+    # Where API keys are kept: the OS keychain, or (tests, throwaway sessions) this process only.
+    key_store: Literal["keyring", "memory"] = "keyring"
     # Apply also writes the mission's `.hex/` files (docs, run contract) into the user's project.
     apply_mission_files: bool = True
     # Agents use native (structured) tool calls; False falls back to CrewAI's text ReAct.
