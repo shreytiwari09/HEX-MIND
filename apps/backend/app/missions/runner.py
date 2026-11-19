@@ -20,6 +20,7 @@ Pause and stop are honoured between steps: the step in flight finishes, then the
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import uuid
@@ -75,10 +76,36 @@ MAX_ATTEMPTS = 3  # the first try and two retries (PRD §8.6)
 CHECK_NAME = "test"
 # Run after every feature, in this order, when the project defines them (PRD §8.4 step 7).
 QUICK_CHECKS = ("typecheck", CHECK_NAME)
+# Files whose contents decide whether dependencies must be installed again.
+DEPENDENCY_FILES = (
+    "package.json",
+    "package-lock.json",
+    "npm-shrinkwrap.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "requirements.txt",
+    "pyproject.toml",
+    "poetry.lock",
+    "uv.lock",
+    "go.mod",
+    "go.sum",
+    "Cargo.toml",
+    "Cargo.lock",
+)
 # Validators find problems, the builder fixes them, validators look again: at most this often.
 MAX_VALIDATION_ROUNDS = 2
 OUTPUT_IN_HANDOFF = 1500
 PROVIDER_FAILURE_MARKER = "ProviderCallFailed"  # raised by HexLLM once the router gave up
+
+
+def dependency_fingerprint(root: Path) -> str:
+    """A hash of the files that say what to install; changes when dependencies change."""
+    digest = hashlib.sha256()
+    for name in DEPENDENCY_FILES:
+        path = root / name
+        if path.is_file() and not path.is_symlink():
+            digest.update(name.encode() + b"\0" + path.read_bytes() + b"\0")
+    return digest.hexdigest()
 
 
 def _check_ok(name: str, outcome: CheckOutcome) -> bool:
@@ -108,6 +135,8 @@ class MissionRunner:
         self.worktree: Path
         self.telemetry: TelemetryHub | None = None
         self.mcp: McpWorkspace | None = None
+        # The dependency files the last successful `install` was run for (reinstall on change).
+        self._installed: str | None = None
 
     # ---------- lifecycle ----------
 
@@ -446,6 +475,14 @@ class MissionRunner:
                 f"passes. Add one to {profile.source}."
             )
         results: list[tuple[str, str, CheckOutcome]] = []
+        if "install" in profile.checks:
+            fingerprint = await run_in_threadpool(dependency_fingerprint, self.worktree)
+            if fingerprint != self._installed:
+                outcome = await self._run_check("install")
+                results.append(("install", profile.checks["install"], outcome))
+                if not outcome.passed:
+                    return results, None
+                self._installed = fingerprint
         for name in QUICK_CHECKS:
             if name not in profile.checks:
                 continue

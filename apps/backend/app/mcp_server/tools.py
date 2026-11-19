@@ -11,6 +11,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from app.context import workspace_scan as scan
+from app.sandbox.image import DockerfileError, ensure_project_image
 from app.sandbox.profile import load_profile
 from app.sandbox.runner import run_check as sandbox_run_check
 from app.workspace.paths import resolve_in_workspace
@@ -130,11 +131,18 @@ class WorkspaceTools:
             command = profile.command(name)
         except ValueError as exc:
             raise ToolError(str(exc)) from None
+        image = profile.image
+        if profile.dockerfile:
+            try:
+                image = ensure_project_image(self.root, self.allowed_images).tag
+            except DockerfileError as exc:
+                raise ToolError(f"The project image could not be built: {exc}") from None
         outcome = sandbox_run_check(
             name=name,
             command=command,
-            image=profile.image,
+            image=image,
             worktree=self.root,
             timeout_s=self.check_timeout_s,
+            network=profile.network_for(name),
         )
         return json.dumps(asdict(outcome))

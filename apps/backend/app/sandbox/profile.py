@@ -13,6 +13,7 @@ check by name; they never supply a command line.
 import json
 import re
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError
@@ -31,6 +32,15 @@ class Profile(BaseModel):
     image: str
     checks: dict[str, str] = Field(default_factory=dict)
     source: str = "detected"
+    # Build the image from the project's `.hex/Dockerfile` (the contract names it); `image` is
+    # then only the fallback.
+    dockerfile: bool = False
+    # Which checks may reach package registries through the allowlist proxy (the contract's
+    # `network.install`); every other check has no network.
+    network_checks: tuple[str, ...] = ()
+
+    def network_for(self, name: str) -> Literal["none", "allowlist"]:
+        return "allowlist" if name in self.network_checks else "none"
 
     def command(self, name: str) -> str:
         if name not in self.checks:
@@ -56,7 +66,13 @@ def load_profile(workspace: Path, worktree: Path, allowed_images: list[str]) -> 
             raise ProfileError(
                 f"image '{image}' is not allowed; allowed: {', '.join(allowed_images)}"
             )
-        return Profile(image=image, checks=contract.checks(), source=CONTRACT_PATH)
+        return Profile(
+            image=image,
+            checks=contract.checks(),
+            source=CONTRACT_PATH,
+            dockerfile=contract.dockerfile is not None,
+            network_checks=("install",) if contract.network.install == "allowlist" else (),
+        )
     path = workspace / PROFILE_PATH
     if path.exists():
         try:

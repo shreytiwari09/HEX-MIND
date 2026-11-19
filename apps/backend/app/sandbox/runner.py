@@ -1,6 +1,7 @@
 """Run profile checks in a locked-down Docker container (plan §7).
 
-Generated code is untrusted: no network, CPU/memory/PID/time limits, read-only root
+Generated code is untrusted: no network (except an `install` check, which may only reach
+package registries through an allowlist proxy), CPU/memory/PID/time limits, read-only root
 filesystem, all capabilities dropped, non-root user, only the worktree mounted. If Docker is
 unavailable the check fails; it never falls back to running on the host.
 
@@ -11,10 +12,30 @@ import re
 import subprocess
 import time
 import uuid
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 OUTPUT_TAIL_CHARS = 4000
+NetworkMode = Literal["none", "allowlist"]
+# Where installs may reach: package registries only (PRD §12.7).
+DEFAULT_INSTALL_HOSTS = (
+    "registry.npmjs.org",
+    "registry.yarnpkg.com",
+    "pypi.org",
+    "files.pythonhosted.org",
+    "index.crates.io",
+    "static.crates.io",
+    "proxy.golang.org",
+    "sum.golang.org",
+)
+INSTALL_NETWORK = "hexmind-install"  # a Docker --internal network: no route out
+TAG_PREFIX = "hexmind-project"  # images built from a project's .hex/Dockerfile
+PROXY_IMAGE = "python:3.11-slim"
+PROXY_PORT = 3128
+PROXY_SCRIPT = Path(__file__).with_name("egress_proxy.py")
 
 
 @dataclass(frozen=True)
@@ -30,11 +51,24 @@ class CheckOutcome:
         return self.exit_code == 0
 
 
-def docker_command(*, image: str, worktree: Path, command: str, container_name: str) -> list[str]:
+def docker_command(
+    *,
+    image: str,
+    worktree: Path,
+    command: str,
+    container_name: str,
+    network: str = "none",
+    proxy: str | None = None,
+) -> list[str]:
+    """`network` is "none" or the name of the internal network whose only way out is `proxy`
+    (the name of the proxy container), which the tools in the container are pointed at."""
+    proxy_env = (
+        [f"--env={name}=http://{proxy}:{PROXY_PORT}" for name in _PROXY_ENV] if proxy else []
+    )
     return [
         "docker", "run", "--rm",
         "--name", container_name,
-        "--network", "none",
+        "--network", network,
         "--cpus", "1",
         "--memory", "1g",
         "--pids-limit", "256",
@@ -45,11 +79,58 @@ def docker_command(*, image: str, worktree: Path, command: str, container_name: 
         "--user", "1000:1000",
         "--env", "HOME=/tmp",
         "--env", "CI=1",
+        *proxy_env,
         "--mount", f"type=bind,source={worktree.resolve()},target=/work",
         "--workdir", "/work",
         image,
         "sh", "-c", command,
     ]  # fmt: skip
+
+
+_PROXY_ENV = ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy")
+
+
+@contextmanager
+def egress_proxy(hosts: Sequence[str]) -> Iterator[str]:
+    """Start the allowlist proxy and yield its container name. It is on the default network (so
+    it can reach out) and on the internal install network (so the install container can reach
+    it); nothing else can. Removed on exit."""
+    subprocess.run(
+        ["docker", "network", "create", "--internal", INSTALL_NETWORK],
+        capture_output=True,
+        timeout=30,
+    )  # fmt: skip  (already existing is fine)
+    ensure_image(PROXY_IMAGE)
+    name = f"hexmind-egress-{uuid.uuid4().hex[:12]}"
+    started = subprocess.run(
+        [
+            "docker", "run", "-d", "--rm", "--name", name,
+            "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+            "--user", "1000:1000", "--memory", "128m", "--pids-limit", "64",
+            "--env", f"ALLOW_HOSTS={','.join(hosts)}", "--env", f"PORT={PROXY_PORT}",
+            "--mount", f"type=bind,source={PROXY_SCRIPT},target=/egress_proxy.py,readonly",
+            PROXY_IMAGE, "python", "/egress_proxy.py",
+        ],
+        capture_output=True, text=True, timeout=60,
+    )  # fmt: skip
+    if started.returncode != 0:
+        raise OSError(f"could not start the egress proxy: {started.stderr.strip()[:300]}")
+    try:
+        subprocess.run(
+            ["docker", "network", "connect", INSTALL_NETWORK, name],
+            capture_output=True, check=True, timeout=30,
+        )  # fmt: skip
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            logs = subprocess.run(["docker", "logs", name], capture_output=True, text=True)
+            if "listening" in logs.stdout + logs.stderr:
+                break
+            time.sleep(0.2)
+        else:
+            raise OSError("the egress proxy did not start")
+        yield name
+    finally:
+        subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=30)
 
 
 def docker_available() -> tuple[bool, str | None]:
@@ -77,19 +158,50 @@ def ensure_image(image: str) -> None:
 
 
 def run_check(
-    *, name: str, command: str, image: str, worktree: Path, timeout_s: int
+    *,
+    name: str,
+    command: str,
+    image: str,
+    worktree: Path,
+    timeout_s: int,
+    network: NetworkMode = "none",
+    allow_hosts: Sequence[str] = DEFAULT_INSTALL_HOSTS,
 ) -> CheckOutcome:
+    """Run `command` in the sandbox. `network` is "none" (the default, and always for test and
+    start) or "allowlist" (installs: package registries only, through the egress proxy)."""
     available, reason = docker_available()
     if not available:
         return CheckOutcome(name, None, 0, "", error=f"sandbox unavailable: {reason}")
-    try:
-        ensure_image(image)
-    except (subprocess.SubprocessError, OSError) as exc:
-        return CheckOutcome(name, None, 0, "", error=f"could not pull {image}: {exc}")
+    if not image.startswith(f"{TAG_PREFIX}:"):  # a project image is built locally, never pulled
+        try:
+            ensure_image(image)
+        except (subprocess.SubprocessError, OSError) as exc:
+            return CheckOutcome(name, None, 0, "", error=f"could not pull {image}: {exc}")
 
     container = f"hexmind-check-{uuid.uuid4().hex[:12]}"
-    argv = docker_command(image=image, worktree=worktree, command=command, container_name=container)
     started = time.perf_counter()
+    try:
+        if network == "allowlist":
+            with egress_proxy(allow_hosts) as proxy:
+                return _run(
+                    name,
+                    docker_command(
+                        image=image, worktree=worktree, command=command,
+                        container_name=container, network=INSTALL_NETWORK, proxy=proxy,
+                    ),
+                    container, timeout_s, started,
+                )  # fmt: skip
+        argv = docker_command(
+            image=image, worktree=worktree, command=command, container_name=container
+        )
+        return _run(name, argv, container, timeout_s, started)
+    except (subprocess.SubprocessError, OSError) as exc:
+        return CheckOutcome(name, None, _ms(started), "", error=f"sandbox error: {exc}")
+
+
+def _run(
+    name: str, argv: list[str], container: str, timeout_s: int, started: float
+) -> CheckOutcome:
     try:
         result = subprocess.run(
             argv, capture_output=True, text=True, encoding="utf-8", errors="replace",

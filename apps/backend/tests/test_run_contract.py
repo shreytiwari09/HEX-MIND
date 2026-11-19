@@ -278,8 +278,10 @@ async def test_the_runner_runs_the_contracts_typecheck_and_tests_and_records_bot
         events = await list_events(session, run.id)
         results = list(await session.scalars(select(CheckResult).order_by(CheckResult.created_at)))
         handoffs = list(await session.scalars(select(HandoffRow).order_by(HandoffRow.created_at)))
-    # Attempt 1 stopped at the failing typecheck; attempts 2 and 3 ran typecheck then tests.
+    # The install ran once, before attempt 1 (the dependency files never changed afterwards);
+    # attempt 1 stopped at the failing typecheck; attempts 2 and 3 ran typecheck then tests.
     assert [(r.name, r.exit_code == 0) for r in results] == [
+        ("install", True),
         ("typecheck", False),
         ("typecheck", True),
         ("test", True),

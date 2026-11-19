@@ -17,6 +17,9 @@ from pathlib import Path
 from typing import Literal
 
 AUTHOR = ["-c", "user.name=H.E.X Mind", "-c", "user.email=hexmind@localhost"]
+# Installed dependencies and caches (node_modules, .venv, ...) live in a mission worktree after an
+# `install` check, but are not part of the work: they are never committed, diffed or applied.
+EXCLUDES = ["-c", f"core.excludesFile={Path(__file__).with_name('worktree_excludes.txt')}"]
 
 
 class GitError(RuntimeError):
@@ -127,19 +130,19 @@ def commit_paths(root: Path, paths: list[str], message: str) -> str:
 
 def commit_all(worktree: Path, message: str) -> str:
     """Commit everything in the worktree (a checkpoint) and return the new commit."""
-    _git(worktree, "add", "-A")
+    _git(worktree, *EXCLUDES, "add", "-A")
     _git(worktree, *AUTHOR, "commit", "-q", "--allow-empty", "-m", message)
     return head(worktree)
 
 
 def is_dirty(worktree: Path) -> bool:
-    return bool(_git(worktree, "status", "--porcelain").stdout.strip())
+    return bool(_git(worktree, *EXCLUDES, "status", "--porcelain").stdout.strip())
 
 
 def reset_to(worktree: Path, commit: str) -> None:
     """Discard every uncommitted change and untracked file, back to `commit`."""
     _git(worktree, "reset", "-q", "--hard", commit)
-    _git(worktree, "clean", "-fdq")
+    _git(worktree, *EXCLUDES, "clean", "-fdq")
 
 
 def delete_branch(root: Path, branch: str) -> None:
@@ -159,7 +162,7 @@ _STATUS = {"A": "added", "M": "modified", "D": "deleted", "T": "modified"}
 
 def diff(worktree: Path, base: str) -> list[FileDiff]:
     """Changes in the worktree (committed or not, tracked or new) relative to `base`."""
-    _git(worktree, "add", "-A")
+    _git(worktree, *EXCLUDES, "add", "-A")
     names = _git(worktree, "diff", "--cached", "--no-renames", "--name-status", "-z", base).stdout
     fields = [f for f in names.split("\0") if f]
     changes: list[FileDiff] = []
