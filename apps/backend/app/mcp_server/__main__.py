@@ -119,6 +119,7 @@ def main() -> None:
     parser.add_argument("--writable", default="", help="exact extra paths agents may write")
     parser.add_argument("--write-only", default="", help="confine writes to these folders")
     parser.add_argument("--skills", default="", help="names of the skills the agent may load")
+    parser.add_argument("--coordination", default="blackboard", choices=["blackboard", "messaging"])
     parser.add_argument("--skills-dir", default="", help="the user's skills folder")
     args = parser.parse_args()
     tools = WorkspaceTools(
@@ -130,6 +131,7 @@ def main() -> None:
         write_only=tuple(p for p in args.write_only.split(",") if p),
         skills=SkillRegistry(Path(args.skills_dir) if args.skills_dir else None),
         allowed_skills=tuple(s for s in args.skills.split(",") if s),
+        coordination=args.coordination,
     )
     build_server(tools).run("stdio")
 

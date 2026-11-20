@@ -16,7 +16,7 @@ from crewai.tools import BaseTool
 
 from app.agents.llm import HexLLM
 from app.agents.persona import Persona
-from app.agents.tools import CODER, READ_ONLY
+from app.agents.tools import BOARD_TOOLS, CODER, READ_ONLY
 from app.missions.models import AgentReport, Feature, Handoff, MissionContext
 from app.skills.registry import Skill, skill_index
 
@@ -30,11 +30,17 @@ REPORT_EXPECTED = (
 )
 
 
-def tool_names_for(persona: Persona, *, acceptance: bool = False) -> tuple[str, ...]:
+def tool_names_for(
+    persona: Persona, *, acceptance: bool = False, coordination: str = "blackboard"
+) -> tuple[str, ...]:
     """Only workers may change files; everyone else reads (PRD §12.6 allow-lists). QA is given
     write tools only to write acceptance tests, and the path guard confines them to
-    `tests/acceptance/`."""
-    return CODER if persona.kind == "worker" or acceptance else READ_ONLY
+    `tests/acceptance/`. With messaging coordination the mission-board tools are left out: the
+    worker knows only what the orchestrator sent."""
+    names = CODER if persona.kind == "worker" or acceptance else READ_ONLY
+    if coordination == "messaging":
+        names = tuple(n for n in names if n not in BOARD_TOOLS)
+    return names
 
 
 def build_agent(
@@ -70,6 +76,7 @@ def feature_prompt(
     repo_map: str = "",
     skills: list[Skill] | None = None,
     plugin_tools: list[str] | None = None,
+    criteria: list[str] | None = None,
 ) -> str:
     """The task the agent works on: the feature spec, then what earlier features left for it,
     a ranked map of the project (`repo_map`, may be empty) and the index of the skills the agent
@@ -88,6 +95,13 @@ def feature_prompt(
             "",
             "Preconditions (already true when you start):",
             *_bullets(feature.preconditions),
+        ]
+    if criteria:
+        lines += [
+            "",
+            "Validation criteria for this feature (what will be checked; you have no access to "
+            "the mission board, so this message is everything you are told about the mission):",
+            *_bullets(criteria),
         ]
     if feature.contract_refs:
         lines += ["", "Contracts to follow:", *_bullets(feature.contract_refs)]

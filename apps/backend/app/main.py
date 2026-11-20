@@ -18,6 +18,7 @@ from app.api import (
     catalog,
     connections,
     conversations,
+    experiments,
     health,
     metrics,
     missions,
@@ -140,6 +141,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         traces,
         provenance,
         metrics,
+        experiments,
     ):
         app.include_router(module.router, prefix="/api", dependencies=[Depends(require_token)])
     app.include_router(missions.needs_router, prefix="/api", dependencies=[Depends(require_token)])

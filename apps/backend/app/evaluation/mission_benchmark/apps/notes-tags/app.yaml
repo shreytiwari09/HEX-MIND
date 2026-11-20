@@ -1,0 +1,55 @@
+id: notes-tags
+idea: 'A notes app: write notes with tags, find them by text or by tag, and see how often each tag is
+  used. It is a plain CommonJS library (no server): the functions are described in the plan.'
+plan:
+  title: Notes app with tags
+  milestones:
+  - id: m1-notes
+    title: Notes
+    validators: []
+    features:
+    - id: notes-model
+      title: Notes and tags
+      persona: backend
+      description: src/notes.js exports createNotes(), addNote(store, {title, body, tags}), getNote(store,
+        id) and deleteNote(store, id). Ids start at 1 and count up. A note is {id, title, body, tags}.
+      expected_behavior:
+      - addNote trims the title and throws Error('title required') when it is empty
+      - tags are trimmed, lower-cased, de-duplicated and empty ones dropped
+      - getNote returns the note, or null for an unknown id
+      - deleteNote removes the note and returns true, or returns false for an unknown id
+      target_files:
+      - src/notes.js
+      - src/notes.test.js
+  - id: m2-search
+    title: Finding notes
+    validators: []
+    features:
+    - id: notes-search
+      title: Search and tags
+      persona: backend
+      description: src/search.js exports searchNotes(store, text), notesByTag(store, tag) and tagCounts(store),
+        over the notes from src/notes.js (the store has a notes list; design it in src/notes.js and read
+        it through getNote or an exported listNotes(store) in src/notes.js).
+      expected_behavior:
+      - searchNotes matches the text case-insensitively in the title or the body, in id order
+      - notesByTag matches a tag case-insensitively
+      - tagCounts returns [{tag, count}] sorted by count (highest first) then tag (a to z)
+      - src/notes.js also exports listNotes(store), the notes in id order
+      target_files:
+      - src/search.js
+      - src/search.test.js
+      - src/notes.js
+  validation_contract:
+  - id: VC-1
+    text: 'Tags are cleaned: trimmed, lower-cased, de-duplicated'
+    how: unit test
+    feature: notes-model
+  - id: VC-2
+    text: Searching finds notes by text in the title or body, ignoring case
+    how: unit test
+    feature: notes-search
+  - id: VC-3
+    text: Tag counts are sorted by count then name
+    how: unit test
+    feature: notes-search

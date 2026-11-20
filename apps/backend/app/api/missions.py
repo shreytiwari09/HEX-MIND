@@ -25,7 +25,7 @@ from app.db.models import (
 from app.events.schema import EventType
 from app.missions import lifecycle, service
 from app.missions.apply import Refused
-from app.missions.models import MissionPlan
+from app.missions.models import Coordination, MissionPlan
 
 router = APIRouter(prefix="/missions", tags=["missions"])
 needs_router = APIRouter(prefix="/needs", tags=["needs"])
@@ -37,6 +37,7 @@ class MissionCreate(BaseModel):
     plan: MissionPlan
     budget_usd: Decimal | None = Field(default=None, gt=0, le=10_000)
     variant_id: str | None = Field(default=None, max_length=32)  # run under a prompt variant
+    coordination: Coordination = "blackboard"  # how the agents share state (PRD §9.8)
 
 
 class FeatureOut(BaseModel):
@@ -91,6 +92,7 @@ class MissionOut(BaseModel):
     apply: ApplyOut | None
     validation_contract: list[dict]  # type: ignore[type-arg]
     variant_id: str | None = None  # the prompt variant it ran under
+    coordination: str = "blackboard"
 
 
 async def _mission_out(session: SessionDep, mission: Mission) -> MissionOut:
@@ -115,6 +117,7 @@ async def _mission_out(session: SessionDep, mission: Mission) -> MissionOut:
         apply=_apply_out(mission.apply_record),
         validation_contract=mission.validation_contract or [],
         variant_id=mission.variant_id,
+        coordination=mission.coordination,
     )
 
 
@@ -150,6 +153,7 @@ async def create_mission(
             plan=body.plan,
             budget_usd=body.budget_usd,
             variant_id=body.variant_id,
+            coordination=body.coordination,
         )
     except service.NotAGitRepo:
         raise HTTPException(

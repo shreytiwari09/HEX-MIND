@@ -63,6 +63,8 @@ from app.workspace.paths import ACCEPTANCE_DIR
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer("hexmind.a2a")
 
+REMEMBERED_EXCHANGES = 64
+
 SKILLS: dict[CrewRole, AgentSkill] = {
     "planner": AgentSkill(
         id="plan",
@@ -109,6 +111,9 @@ class CrewExecutor(AgentExecutor):
     def __init__(self, services: Services, role: CrewRole) -> None:
         self.services = services
         self.role = role
+        # Work by exchange id: a request sent again (after a timeout) joins the work already
+        # done or in flight instead of doing it twice. Remembers the most recent exchanges only.
+        self._work: dict[str, asyncio.Future[str]] = {}
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         assert context.message is not None
@@ -158,7 +163,7 @@ class CrewExecutor(AgentExecutor):
             await updater.update_status(TaskState.working)
             await note("sent", "working")
             try:
-                result = await self._run_crew(request, context.get_user_input(), hub)
+                result = await self._once(request, context.get_user_input(), hub)
             except Exception as exc:
                 logger.exception("crew %s failed for run %s", self.role, request.run_id)
                 await updater.failed(
@@ -172,6 +177,17 @@ class CrewExecutor(AgentExecutor):
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         raise NotImplementedError("crew runs cannot be cancelled mid-task")
+
+    async def _once(self, request: CrewRequest, prompt: str, hub: TelemetryHub) -> str:
+        key = str(request.exchange_id)
+        work = self._work.get(key)
+        if work is None:
+            work = asyncio.ensure_future(self._run_crew(request, prompt, hub))
+            self._work[key] = work
+            while len(self._work) > REMEMBERED_EXCHANGES:
+                del self._work[next(iter(self._work))]
+        # Shielded: the first caller giving up (its connection timed out) must not stop the work.
+        return await asyncio.shield(work)
 
     async def _route(self, persona: Any, escalate: bool = False) -> Any:
         """The persona's assigned models, or None to use the global provider order."""
@@ -210,6 +226,7 @@ class CrewExecutor(AgentExecutor):
             write_only=_write_only_for(request),
             skills=tuple(s.name for s in offered),
             skills_dir=registry.user_dir,
+            coordination=coordination_of(request),
         )
         await run_in_threadpool(mcp.start)
         plugin_host: PluginHost | None = None
@@ -275,7 +292,11 @@ class CrewExecutor(AgentExecutor):
                     tools=[
                         *make_tools(
                             mcp,
-                            tool_names_for(persona, acceptance=request.mode == "acceptance"),
+                            tool_names_for(
+                                persona,
+                                acceptance=request.mode == "acceptance",
+                                coordination=request.coordination,
+                            ),
                             listener,
                         ),
                         *plugin_tools,
@@ -294,6 +315,7 @@ class CrewExecutor(AgentExecutor):
                     acceptance=request.mode == "acceptance",
                     skills=offered,
                     plugin_tools=[t.name for t in plugin_tools],
+                    criteria=request.criteria,
                     repo_map=await run_in_threadpool(build_repo_map, ctx.worktree, focus),
                 )
             else:
@@ -319,6 +341,10 @@ class CrewExecutor(AgentExecutor):
             if plugin_host is not None:
                 await run_in_threadpool(plugin_host.close)
             await run_in_threadpool(mcp.close)
+
+
+def coordination_of(request: CrewRequest) -> str:
+    return request.coordination if isinstance(request, PersonaRequest) else "blackboard"
 
 
 def _writable_for(request: CrewRequest) -> tuple[str, ...]:

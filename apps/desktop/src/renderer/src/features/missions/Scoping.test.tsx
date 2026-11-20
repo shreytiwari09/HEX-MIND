@@ -221,6 +221,27 @@ describe('answering and reviewing the plan', () => {
 })
 
 
+describe('choosing how the team shares work', () => {
+  it('sends the choice of messaging, and nothing extra for the default', async () => {
+    const api = makeApi({ '/variants': [], '/scoping': session() })
+    render(<NewMission {...props(api)} />)
+
+    fireEvent.change(screen.getByLabelText('How the team shares work'), { target: { value: 'messaging' } })
+    fireEvent.change(screen.getByLabelText(/What do you want built/), { target: { value: 'A todo app' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Start scoping' }))
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith('/scoping', {
+        project_id: 'p1',
+        idea: 'A todo app',
+        budget_usd: undefined,
+        variant_id: undefined,
+        coordination: 'messaging'
+      })
+    )
+  })
+})
+
 describe('choosing a prompt variant', () => {
   it('offers the variants you have and sends the one you pick', async () => {
     const api = makeApi({

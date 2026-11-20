@@ -92,6 +92,9 @@ class Settings(BaseSettings):
     crew_service_url: str = "http://127.0.0.1:8766"
     crew_service_autostart: bool = True
     a2a_timeout_s: float = 1800
+    # Messaging coordination (PRD §9.8): how often a request that timed out is sent again with the
+    # same exchange id (the crew service answers a repeat from the work already done or in flight).
+    messaging_resends: int = 2
 
     # OpenTelemetry: OTLP/HTTP traces endpoint, e.g. http://127.0.0.1:4318/v1/traces.
     otlp_endpoint: str | None = None

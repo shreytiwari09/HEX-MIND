@@ -156,6 +156,7 @@ class McpWorkspace(McpBridge):
         write_only: tuple[str, ...] = (),
         skills: tuple[str, ...] = (),
         skills_dir: Path | None = None,
+        coordination: str = "blackboard",
     ) -> None:
         params = StdioServerParameters(
             command=sys.executable,
@@ -169,6 +170,7 @@ class McpWorkspace(McpBridge):
                 "--write-only", ",".join(write_only),
                 "--skills", ",".join(skills),
                 "--skills-dir", str(skills_dir) if skills_dir else "",
+                "--coordination", coordination,
             ],
             cwd=str(BACKEND_DIR),
             env=_server_env(),

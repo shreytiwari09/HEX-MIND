@@ -67,6 +67,7 @@ async def create_mission(
     run: Run | None = None,
     prd: str | None = None,
     variant_id: str | None = None,
+    coordination: str = "blackboard",
 ) -> Mission:
     """A mission awaiting approval, in a new worktree on its own branch. `run` is the scoping
     chat's run when the plan came from the PM, so the mission's trail starts at the idea; `prd`
@@ -100,6 +101,7 @@ async def create_mission(
             budget_usd=budget_usd,
             validation_contract=[c.model_dump() for c in plan.validation_contract],
             variant_id=variant_id,
+            coordination=coordination,
         )
         session.add(mission)
         await session.flush()

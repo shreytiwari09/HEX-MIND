@@ -150,6 +150,12 @@ export function MissionScreen({
               {mission.tokens_in.toLocaleString()} in / {mission.tokens_out.toLocaleString()} out
             </dd>
           </div>
+          {mission.coordination === 'messaging' && (
+            <div>
+              <dt>Team</dt>
+              <dd>messages only</dd>
+            </div>
+          )}
           <div>
             <dt>Branch</dt>
             <dd>

@@ -23,6 +23,8 @@ READ_ONLY = (
     "get_feature_context",
     "load_skill",
 )
+# The tools that read the mission board; messaging coordination withholds them (PRD §9.8).
+BOARD_TOOLS = ("list_features", "get_feature_context")
 CODER = (*READ_ONLY, "write_file", "replace_in_file", "delete_file", "move_file", "run_check")
 
 ToolListener = Callable[[str, dict[str, Any], bool, str], None]

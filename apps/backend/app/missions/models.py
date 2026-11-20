@@ -19,6 +19,9 @@ FeatureStatus = Literal["pending", "in_progress", "done", "failed", "skipped"]
 # not fix. accepted: the user chose to go on despite that.
 MilestoneStatus = Literal["pending", "active", "completed", "passed", "failed", "accepted"]
 # PRD §8.1. Cancelled and failed can follow any other state.
+# How a mission's agents share state (PRD §9.8).
+Coordination = Literal["blackboard", "messaging"]
+
 MissionStatus = Literal[
     "draft",
     "scoping",

@@ -39,6 +39,18 @@ class CrewCallFailed(RuntimeError):
     pass
 
 
+class CrewCallTimedOut(CrewCallFailed):
+    """No answer within the timeout. The work may still be running on the crew service."""
+
+
+def _timed_out(exc: BaseException | None) -> bool:
+    while exc is not None:
+        if isinstance(exc, (httpx.TimeoutException, TimeoutError)):
+            return True
+        exc = exc.__cause__ or exc.__context__
+    return False
+
+
 def a2a_http_client(settings: Settings, **kwargs: Any) -> httpx.AsyncClient:
     """HTTP client for the crew service; tests pass an ASGI transport."""
     return httpx.AsyncClient(
@@ -110,6 +122,8 @@ async def call_crew(
         _, events = await run_adk(agent, message=prompt)
     except Exception as exc:
         await note("received", "failed", summary=f"{type(exc).__name__}: {exc}"[:300])
+        if _timed_out(exc):
+            raise CrewCallTimedOut(f"{name} did not answer in time: {exc}"[:500]) from exc
         raise CrewCallFailed(f"{name} A2A call failed: {exc}") from exc
     text, meta, error, state = _reply(events, name)
     duration = int((time.monotonic() - started) * 1000)
@@ -126,6 +140,21 @@ async def call_crew(
     if state != "completed":
         raise CrewCallFailed(f"{name} A2A task {state}: {error or text or 'no result'}"[:500])
     return text
+
+
+async def call_crew_with_resend(*, resends: int, **kwargs: Any) -> str:
+    """`call_crew`, sending the same request again when it times out (messaging coordination,
+    PRD §9.8). The request keeps its `exchange_id`, which is the idempotency key: the crew
+    service answers a repeat from the work already done or still in flight, so a resend never
+    does the work twice."""
+    for attempt in range(resends + 1):
+        try:
+            return await call_crew(**kwargs)
+        except CrewCallTimedOut:
+            if attempt == resends:
+                raise
+            logger.warning("no answer from the crew; sending the request again (%s)", attempt + 1)
+    raise AssertionError("unreachable")
 
 
 def _reply(events: list[Event], author: str) -> tuple[str, dict[str, Any], str | None, str]:

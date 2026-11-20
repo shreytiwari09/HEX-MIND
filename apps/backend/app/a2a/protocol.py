@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from app.agents.build import REPORT_EXPECTED
 from app.agents.persona import Persona
-from app.missions.models import Feature, Handoff
+from app.missions.models import Coordination, Feature, Handoff
 from app.plugins.config import PluginSpec
 
 # `planner` and `coder` are the fixed crews of the run workflow. `persona` serves any persona
@@ -59,6 +59,11 @@ class PersonaRequest(CrewRequest):
     # The prompt variant the mission runs under (already applied to `persona`); recorded on every
     # model call of this job.
     variant_id: str | None = None
+    # How the mission shares state (PRD §9.8). With "messaging" the worker has no mission board:
+    # this request is everything it learns about the mission, so the feature's validation
+    # criteria travel in it too.
+    coordination: Coordination = "blackboard"
+    criteria: list[str] = Field(default_factory=list)
     feature: Feature
     earlier_handoffs: list[Handoff] = Field(default_factory=list)
     # The exact findings of a rejected attempt, for the retry (PRD §8.6).

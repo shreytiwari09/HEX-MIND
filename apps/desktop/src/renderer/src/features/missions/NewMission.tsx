@@ -59,6 +59,7 @@ export function NewMission({ api, projectId, onCreated, onCancel }: Props) {
   const [idea, setIdea] = useState('')
   const [budget, setBudget] = useState('')
   const [variantId, setVariantId] = useState('')
+  const [coordination, setCoordination] = useState<'blackboard' | 'messaging'>('blackboard')
   const [variants, setVariants] = useState<{ id: string; name: string }[]>([])
 
   // Prompt variants (PRD §11.5): optional named configurations to run the mission under.
@@ -94,7 +95,8 @@ export function NewMission({ api, projectId, onCreated, onCancel }: Props) {
           project_id: projectId,
           idea: idea.trim(),
           budget_usd: amount,
-          variant_id: variantId || undefined
+          variant_id: variantId || undefined,
+          coordination: coordination === 'messaging' ? coordination : undefined
         })
       )
     } catch (err) {
@@ -139,6 +141,16 @@ export function NewMission({ api, projectId, onCreated, onCancel }: Props) {
           </select>
         </label>
       )}
+      <label className="new-mission__field">
+        How the team shares work
+        <select
+          value={coordination}
+          onChange={(event) => setCoordination(event.target.value as 'blackboard' | 'messaging')}
+        >
+          <option value="blackboard">Shared board: everyone can read the plan and the handoffs</option>
+          <option value="messaging">Messages only: each agent gets just what the orchestrator sends</option>
+        </select>
+      </label>
       {error && (
         <p role="alert" className="mission__error">
           {error}

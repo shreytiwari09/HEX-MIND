@@ -873,3 +873,62 @@
   height: auto;
   overflow: visible;
 }
+
+/* ---------- Experiments ---------- */
+
+.experiments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 1000px;
+  height: 100%;
+  padding: var(--space-4);
+  overflow-y: auto;
+}
+
+.experiments__card,
+.experiments__sweep,
+.experiments__safety {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+
+.experiments__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.experiments__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.experiments__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.experiments__table th,
+.experiments__table td {
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.experiments__report {
+  overflow-x: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  white-space: pre-wrap;
+}

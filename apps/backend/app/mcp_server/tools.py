@@ -29,6 +29,8 @@ MAX_SEARCH_HITS = 50
 MAX_GIT_OUTPUT = 12_000
 MAX_LOG_COUNT = 50
 MAX_HANDOFFS = 8
+# The mission board's folder. With messaging coordination agents may not read it (PRD §9.8).
+BOARD_DIR = ".hex/mission"
 
 
 class ToolError(ValueError):
@@ -47,6 +49,7 @@ class WorkspaceTools:
         write_only: tuple[str, ...] = (),
         skills: SkillRegistry | None = None,
         allowed_skills: tuple[str, ...] = (),
+        coordination: str = "blackboard",
     ) -> None:
         self.root = root.resolve()
         self.workspace = workspace
@@ -56,8 +59,21 @@ class WorkspaceTools:
         self.write_only = write_only
         self.skills = skills
         self.allowed_skills = allowed_skills
+        self.coordination = coordination
+
+    def _on_board(self, rel: str) -> bool:
+        """Whether `rel` is the mission board, which a messaging worker must not see."""
+        if self.coordination != "messaging":
+            return False
+        posix = rel.replace("\\", "/").strip("/").lower()
+        return posix == BOARD_DIR or posix.startswith(BOARD_DIR + "/")
 
     def _path(self, rel: str, *, write: bool = False) -> Path:
+        if self._on_board(self._normal(rel)):
+            raise ToolError(
+                "the mission board is not available to you: everything you need is in the "
+                "message you were sent"
+            )
         try:
             return resolve_in_workspace(
                 self.root,
@@ -70,12 +86,18 @@ class WorkspaceTools:
         except ValueError as exc:
             raise ToolError(str(exc)) from None
 
+    @staticmethod
+    def _normal(rel: str) -> str:
+        """`rel` with `.` and empty parts dropped, so `./.hex//mission` is still the board."""
+        return "/".join(p for p in rel.replace("\\", "/").split("/") if p not in ("", "."))
+
     def list_files(self, path: str = "") -> str:
         prefix = self._path(path).relative_to(self.root).as_posix() if path else ""
         files = [
             f.path
             for f in scan.list_files(self.root)
-            if not prefix or f.path == prefix or f.path.startswith(prefix + "/")
+            if (not prefix or f.path == prefix or f.path.startswith(prefix + "/"))
+            and not self._on_board(f.path)
         ]
         return "\n".join(files) if files else "(no files)"
 
@@ -96,6 +118,8 @@ class WorkspaceTools:
         needle = query.lower()
         hits: list[str] = []
         for file in scan.list_files(self.root):
+            if self._on_board(file.path):
+                continue
             text = scan.read_text(self.root, file.path)
             if text is None:
                 continue

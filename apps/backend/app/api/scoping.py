@@ -15,7 +15,7 @@ from app.api.deps import ServicesDep, SessionDep, SettingsDep
 from app.api.missions import MissionOut, _mission_out
 from app.db.models import LLMCall, Project, ScopingSession
 from app.missions import scoping, service
-from app.missions.models import MissionPlan
+from app.missions.models import Coordination, MissionPlan
 
 router = APIRouter(prefix="/scoping", tags=["scoping"])
 
@@ -25,6 +25,7 @@ class ScopingCreate(BaseModel):
     idea: str = Field(min_length=3, max_length=8000)
     budget_usd: Decimal | None = Field(default=None, gt=0, le=10_000)
     variant_id: str | None = Field(default=None, max_length=32)
+    coordination: Coordination = "blackboard"
 
 
 class ScopingReply(BaseModel):
@@ -50,6 +51,7 @@ class ScopingOut(BaseModel):
     budget_usd: float | None
     mission_id: uuid.UUID | None
     variant_id: str | None = None
+    coordination: str = "blackboard"
     # What the PM's calls cost so far (from llm_calls, not estimated).
     cost_usd: float
     created_at: datetime
@@ -74,6 +76,7 @@ async def _out(session: SessionDep, row: ScopingSession) -> ScopingOut:
         budget_usd=float(row.budget_usd) if row.budget_usd is not None else None,
         mission_id=row.mission_id,
         variant_id=row.variant_id,
+        coordination=row.coordination,
         cost_usd=float(cost or 0),
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -103,6 +106,7 @@ async def start(body: ScopingCreate, session: SessionDep, services: ServicesDep)
         idea=body.idea,
         budget_usd=body.budget_usd,
         variant_id=body.variant_id,
+        coordination=body.coordination,
     )
     return await _out(session, row)
 

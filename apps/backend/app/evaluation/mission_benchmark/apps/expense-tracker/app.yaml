@@ -1,0 +1,56 @@
+id: expense-tracker
+idea: 'An expense tracker: record expenses with a category and a date, see totals per category and per
+  month, and get the numbers for a bar chart. It is a plain CommonJS library (no server): the functions
+  are described in the plan.'
+plan:
+  title: Expense tracker with charts
+  milestones:
+  - id: m1-ledger
+    title: Ledger
+    validators: []
+    features:
+    - id: expenses
+      title: Record and total expenses
+      persona: backend
+      description: src/expenses.js exports createLedger(), addExpense(ledger, {amount, category, date,
+        note}), totalsByCategory(ledger) and monthlyTotal(ledger, month). An expense is {id, amount, category,
+        date, note}; ids start at 1.
+      expected_behavior:
+      - addExpense throws Error('amount must be positive') unless amount is a number above 0
+      - addExpense throws Error('invalid date') unless date looks like YYYY-MM-DD
+      - the category is trimmed and lower-cased
+      - totalsByCategory returns an object of category to total, each rounded to 2 decimals
+      - monthlyTotal(ledger, '2026-03') sums the expenses dated in that month, rounded to 2 decimals (0
+        for none)
+      target_files:
+      - src/expenses.js
+      - src/expenses.test.js
+  - id: m2-chart
+    title: Chart data
+    validators: []
+    features:
+    - id: chart-data
+      title: Bar chart numbers
+      persona: frontend
+      description: src/chart.js exports barChartData(totals), which takes the object from totalsByCategory
+        and returns the numbers a bar chart needs.
+      expected_behavior:
+      - returns [{label, value, percent}] sorted by value (highest first), then label (a to z)
+      - percent is the share of the grand total, rounded to 1 decimal
+      - an empty or all-zero totals object returns []
+      target_files:
+      - src/chart.js
+      - src/chart.test.js
+  validation_contract:
+  - id: VC-1
+    text: Bad amounts and bad dates are refused
+    how: unit test
+    feature: expenses
+  - id: VC-2
+    text: Totals per category and per month are right to the cent
+    how: unit test
+    feature: expenses
+  - id: VC-3
+    text: Chart data is sorted and its percentages add up
+    how: unit test
+    feature: chart-data

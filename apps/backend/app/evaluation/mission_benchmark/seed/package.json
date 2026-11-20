@@ -1,0 +1,8 @@
+{
+  "name": "mission-benchmark-app",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test"
+  }
+}

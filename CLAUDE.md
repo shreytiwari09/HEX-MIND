@@ -4,12 +4,13 @@ A desktop app where a team of AI agent personas (PM, Backend, Frontend, Designer
 
 **`PRD.md` is the single source of truth.** Read the relevant sections before starting any phase or feature. Don't create other planning `.md` files; update `PRD.md` instead, and record changed decisions in its §21.
 
-**Current phase:** P7 Observability & state sharing (PRD §18.1). P3 to P6 are built and test-verified on branches `p3-mission-core`, `p4-models-and-keys`, `p5-planning-validation` and `p6-skills-plugins`; none has had a live run with real provider keys yet. Deferred: Playwright, research subagents, the edit-format layer, the preview pane (PRD §21 D41, D45); P6 left out private GitHub skills, an LLM injection classifier and the variant manager UI (D50-D52). Update this line when a phase is done.
+**Current phase:** P8 Evaluation is built and test-verified (PRD §15, D59) but has produced no results: it needs real provider keys. E4 and E5 can run; E1 to E3 and E6 are blocked and say why. Next: a live check with real keys, then P9 cloud deployment. P3 to P8 are built (P3 to P6 on branches `p3-mission-core`, `p4-models-and-keys`, `p5-planning-validation` and `p6-skills-plugins`; P7 steps 1 to 5 are committed on top of `p6-skills-plugins` and not pushed; P7 step 6 (messaging coordination, D58) and P8 are written and not yet committed); none has had a live run with real provider keys yet. Deferred: Playwright, research subagents, the edit-format layer, the preview pane (PRD §21 D41, D45); P6 left out private GitHub skills, an LLM injection classifier and the variant manager UI (D50-D52); P7 left out redacted prompt storage, automatic resume, notifications while the app is closed and the message-flow view (D53, D57, D58); P8 left out the LLM judge, human spot checks, the replay cache and E1 to E3, E6 (D59). Update this line when a phase is done.
 
 ## Commands (run from the repo root)
 - Database: `npm run db:up`, then `npm run db:migrate` (Postgres on 127.0.0.1:5433)
 - Backend: `npm run dev:backend` (FastAPI on :8765; it starts the CrewAI A2A crew service on :8766)
 - Desktop app: `npm run dev`
+- Experiments (backend running): `python -m app.evaluation.run list`, `--experiment E4 --repeats 3`, `report`; `python -m app.evaluation.missions validate`; `python -m app.evaluation.safety`
 - Tests: `npm test` (desktop + backend), `npm run test:backend`, `npm run typecheck`, `npm run lint:backend`
 - After changing `apps/backend/app/events/schema.py`: `npm run gen:events` (never hand-edit `generated/events.ts`)
 - Python runs through `uv` (`uv --directory apps/backend run …`).

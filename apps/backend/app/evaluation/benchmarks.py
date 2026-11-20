@@ -54,12 +54,20 @@ def load_tasks() -> list[BenchmarkTask]:
     return tasks
 
 
-def prepare_workspace(dest: Path, *, reference: BenchmarkTask | None = None) -> Path:
-    """Copy the seed project (optionally with a reference solution overlaid) into `dest` and
-    make it a git repository, ready for an agent run."""
-    shutil.copytree(SEED_DIR, dest)
+def prepare_workspace(
+    dest: Path,
+    *,
+    reference: BenchmarkTask | None = None,
+    seed: Path = SEED_DIR,
+    overlays: tuple[Path, ...] = (),
+) -> Path:
+    """Copy the seed project (optionally with a reference solution, or other folders, overlaid)
+    into `dest` and make it a git repository, ready for an agent run."""
+    shutil.copytree(seed, dest)
     if reference is not None:
         shutil.copytree(reference.reference_dir, dest, dirs_exist_ok=True)
+    for overlay in overlays:
+        shutil.copytree(overlay, dest, dirs_exist_ok=True)
     for args in (
         ["init", "-q"],
         ["add", "-A"],
@@ -72,19 +80,38 @@ def prepare_workspace(dest: Path, *, reference: BenchmarkTask | None = None) -> 
 
 def grade(project_dir: Path, task: BenchmarkTask, *, timeout_s: int = 120) -> CheckOutcome:
     """Run the hidden acceptance test against a copy of `project_dir`."""
+    return grade_file(project_dir, task.acceptance_test, task.slug, timeout_s=timeout_s)
+
+
+def grade_file(
+    project_dir: Path, test_file: Path, label: str, *, timeout_s: int = 120
+) -> CheckOutcome:
+    """Copy `project_dir` to a scratch folder, add the hidden test file there and run it in the
+    sandbox. The project itself is never touched."""
     with tempfile.TemporaryDirectory(prefix="hexmind-grade-") as tmp:
         scratch = Path(tmp) / "project"
         shutil.copytree(project_dir, scratch, ignore=shutil.ignore_patterns(".git", "node_modules"))
         target = scratch / ACCEPTANCE_DIR
         target.mkdir()
-        shutil.copy2(task.acceptance_test, target / task.acceptance_test.name)
+        shutil.copy2(test_file, target / test_file.name)
         return run_check(
-            name=f"acceptance:{task.slug}",
-            command=f"node --test {ACCEPTANCE_DIR}/{task.acceptance_test.name}",
+            name=f"acceptance:{label}",
+            command=f"node --test {ACCEPTANCE_DIR}/{test_file.name}",
             image=GRADE_IMAGE,
             worktree=scratch,
             timeout_s=timeout_s,
         )
+
+
+def counts(outcome: CheckOutcome) -> tuple[int | None, int | None]:
+    """(tests passed, tests total) from node's test summary, or (None, None) when unreadable."""
+    import re
+
+    total = re.search(r"# tests (\d+)", outcome.output_tail)
+    ok = re.search(r"# pass (\d+)", outcome.output_tail)
+    if total is None or ok is None:
+        return None, None
+    return int(ok.group(1)), int(total.group(1))
 
 
 def passed(outcome: CheckOutcome) -> bool:

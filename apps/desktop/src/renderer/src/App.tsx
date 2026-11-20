@@ -4,6 +4,7 @@ import {
   Bot,
   BookOpen,
   Files,
+  FlaskConical,
   FolderOpen,
   History,
   KeyRound,
@@ -34,6 +35,7 @@ import { NewPersona } from './features/agents/NewPersona'
 import { PersonaEditor } from './features/agents/PersonaEditor'
 import { PersonaList } from './features/agents/PersonaList'
 import { useTeam } from './features/agents/useTeam'
+import { ExperimentsView } from './features/experiments/ExperimentsView'
 import { MetricsScope, MetricsView } from './features/metrics/MetricsView'
 import { NotificationsPanel } from './features/notifications/NotificationsPanel'
 import { notificationsEnabled, useMissionNotifications } from './features/notifications/useMissionNotifications'
@@ -54,7 +56,7 @@ import { useWorkspace } from './features/workspace/useWorkspace'
 import { useBackendHealth } from './hooks/useBackendHealth'
 import { useBackend } from './lib/backend'
 
-type View = 'explorer' | 'missions' | 'models' | 'observability' | 'agents' | 'skills' | 'plugins' | 'metrics' | 'runs' | 'settings'
+type View = 'explorer' | 'missions' | 'models' | 'observability' | 'agents' | 'skills' | 'plugins' | 'metrics' | 'experiments' | 'runs' | 'settings'
 
 const VIEWS: { id: View; label: string; icon: LucideIcon }[] = [
   { id: 'explorer', label: 'Explorer', icon: Files },
@@ -65,6 +67,7 @@ const VIEWS: { id: View; label: string; icon: LucideIcon }[] = [
   { id: 'skills', label: 'Skills', icon: BookOpen },
   { id: 'plugins', label: 'Plugins', icon: Plug },
   { id: 'metrics', label: 'Metrics', icon: BarChart3 },
+  { id: 'experiments', label: 'Experiments', icon: FlaskConical },
   { id: 'runs', label: 'Runs', icon: History },
   { id: 'settings', label: 'Settings', icon: Settings }
 ]
@@ -72,7 +75,7 @@ const VIEWS: { id: View; label: string; icon: LucideIcon }[] = [
 const BOTTOM_TABS = ['Problems', 'Tasks', 'Agent Events', 'Logs'] as const
 type BottomTab = (typeof BOTTOM_TABS)[number]
 
-const SIDEBAR_EMPTY: Record<Exclude<View, 'explorer' | 'missions' | 'models' | 'observability' | 'agents' | 'skills' | 'plugins' | 'metrics' | 'runs'>, string> = {
+const SIDEBAR_EMPTY: Record<Exclude<View, 'explorer' | 'missions' | 'models' | 'observability' | 'agents' | 'skills' | 'plugins' | 'metrics' | 'experiments' | 'runs'>, string> = {
   settings: ''
 }
 
@@ -300,6 +303,8 @@ export function App() {
               />
             ) : view === 'metrics' ? (
               <MetricsScope api={api} projectId={project?.id ?? null} selected={metricsMission} onSelect={setMetricsMission} />
+            ) : view === 'experiments' ? (
+              <EmptyState title="Runs of the mission benchmark under different conditions" />
             ) : view === 'plugins' ? (
               <PluginList
                 data={pluginsData}
@@ -400,6 +405,8 @@ export function App() {
           ) : (
             <EmptyState title="Open a workspace to see its metrics" />
           )
+        ) : view === 'experiments' ? (
+          <ExperimentsView api={api} />
         ) : view === 'plugins' ? (
           creatingPlugin ? (
             <NewPlugin

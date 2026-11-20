@@ -77,6 +77,8 @@ export interface Mission {
   apply: MissionApply | null
   /** The prompt variant it ran under, if any. */
   variant_id?: string | null
+  /** How the team shares state: the mission board, or only the messages it is sent. */
+  coordination?: 'blackboard' | 'messaging'
 }
 
 export interface Need {

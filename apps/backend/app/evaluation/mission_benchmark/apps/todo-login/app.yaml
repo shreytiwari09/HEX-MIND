@@ -1,0 +1,57 @@
+id: todo-login
+idea: 'A to-do app where people register, log in, and each person sees and manages only their own todos.
+  It is a plain CommonJS library (no server): the functions are described in the plan.'
+plan:
+  title: To-do app with login
+  milestones:
+  - id: m1-auth
+    title: Accounts
+    validators: []
+    features:
+    - id: auth
+      title: Accounts and login
+      persona: backend
+      description: src/auth.js exports createUserStore(), register(store, email, password), login(store,
+        email, password) and userFor(store, token). A store is a plain object you design. register returns
+        {id, email}; login returns a token string; userFor returns the user for a token or null.
+      expected_behavior:
+      - register throws Error('invalid email') when the email has no '@'
+      - register throws Error('password too short') for passwords under 8 characters
+      - register throws Error('email taken') for an email already registered (case-insensitive)
+      - login returns a token for the right password and throws Error('invalid credentials') otherwise
+      - the password is never stored as given
+      - userFor(store, token) returns the user, or null for an unknown token
+      target_files:
+      - src/auth.js
+      - src/auth.test.js
+  - id: m2-todos
+    title: Per-user todos
+    validators: []
+    features:
+    - id: user-todos
+      title: Todos per user
+      persona: backend
+      description: src/userTodos.js exports addTodo(store, token, title), listTodos(store, token) and
+        toggleTodo(store, token, id), using the accounts from src/auth.js. Each user has their own list;
+        ids are 1, 2, 3 within a user's list.
+      expected_behavior:
+      - addTodo trims the title and throws Error('title required') when it is empty
+      - every function throws Error('not logged in') for an unknown token
+      - a user only ever sees their own todos
+      - toggleTodo flips done on that user's todo and throws Error('todo not found') for an unknown id
+      target_files:
+      - src/userTodos.js
+      - src/userTodos.test.js
+  validation_contract:
+  - id: VC-1
+    text: Registering with a bad email, a short password or a taken email is refused
+    how: unit test
+    feature: auth
+  - id: VC-2
+    text: Logging in needs the right password and the password is not stored as given
+    how: unit test
+    feature: auth
+  - id: VC-3
+    text: Users cannot see or change each other's todos
+    how: unit test
+    feature: user-todos

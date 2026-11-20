@@ -28,13 +28,13 @@ import uuid
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi.concurrency import run_in_threadpool
 from pydantic import ValidationError
 from sqlalchemy import func, select
 
-from app.a2a.client import CrewCallFailed, call_crew
+from app.a2a.client import CrewCallFailed, call_crew, call_crew_with_resend
 from app.a2a.protocol import PersonaRequest
 from app.agents import variants
 from app.agents.mcp_bridge import McpWorkspace
@@ -153,6 +153,8 @@ class MissionRunner:
         self._installed: str | None = None
         # The prompt variant this mission runs under, if any (agents/variants.py).
         self.variant: Variant | None = None
+        # How this mission shares state (PRD §9.8): 'blackboard' or 'messaging'.
+        self.coordination = "blackboard"
 
     # ---------- lifecycle ----------
 
@@ -168,6 +170,7 @@ class MissionRunner:
                 self.variant = await variants.get(session, mission.variant_id)
             except variants.VariantError as exc:
                 raise MissionAborted(str(exc)) from None
+        self.coordination = mission.coordination
         self.run_id = run.id
         self.workspace = Path(project.workspace_path)
         self.worktree = Path(run.worktree_path)
@@ -206,6 +209,26 @@ class MissionRunner:
                     EventType.PROMPT_VARIANT_SELECTED,
                     payload={"role": role, "variant": self.variant.id},
                 )
+
+    async def _call_worker(self, **kwargs: Any) -> str:
+        """One request to a persona crew. In messaging mode a request that times out is sent
+        again with the same exchange id (PRD §9.8: timeout + resend with an idempotency key)."""
+        if self.coordination == "messaging":
+            return await call_crew_with_resend(
+                resends=self.services.settings.messaging_resends, **kwargs
+            )
+        return await call_crew(**kwargs)
+
+    def _criteria_for(self, mission: Mission, key: str) -> list[str]:
+        """The validation criteria of one feature, sent in the request in messaging mode (a
+        blackboard worker reads them from the mission folder instead)."""
+        if self.coordination != "messaging":
+            return []
+        return [
+            f"{c['id']}: {c['text']}   [{c['how']}]"
+            for c in mission.validation_contract or []
+            if c.get("feature") == key
+        ]
 
     async def close(self) -> None:
         if self.mcp is not None:
@@ -372,6 +395,7 @@ class MissionRunner:
             ]
             started = await session.scalar(select(func.clock_timestamp()))
             await service.sync_mission_folder(session, mission, self.worktree)
+            criteria = self._criteria_for(mission, key)
         before = await run_in_threadpool(git.head, self.worktree)
         try:
             persona = self.persona(feature.persona)  # the user's edits, and this mission's variant
@@ -406,6 +430,8 @@ class MissionRunner:
             persona=persona,
             plugins=plugins,
             variant_id=self.variant_id,
+            coordination=self.coordination,
+            criteria=criteria,
             feature=feature,
             earlier_handoffs=earlier,
             feedback=feedback,
@@ -413,8 +439,8 @@ class MissionRunner:
             escalate=number >= MAX_ATTEMPTS,
         )
         try:
-            text = await call_crew(
-                "persona",
+            text = await self._call_worker(
+                role="persona",
                 hub=self.telemetry,
                 http=self.services.a2a_http,
                 settings=self.services.settings,
@@ -845,12 +871,13 @@ class MissionRunner:
                 persona_id="qa",
                 persona=self.persona("qa"),
                 variant_id=self.variant_id,
+                coordination=self.coordination,
                 feature=feature,
                 mode="acceptance",
             )
             try:
-                await call_crew(
-                    "persona",
+                await self._call_worker(
+                    role="persona",
                     hub=self.telemetry,
                     http=self.services.a2a_http,
                     settings=self.services.settings,

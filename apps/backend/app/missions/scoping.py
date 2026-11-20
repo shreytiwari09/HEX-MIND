@@ -365,6 +365,7 @@ async def start(
     idea: str,
     budget_usd: Decimal | None = None,
     variant_id: str | None = None,
+    coordination: str = "blackboard",
 ) -> ScopingSession:
     title = " ".join(idea.split())[:80] or "New mission"
     run = Run(project_id=project.id, title=title, status="scoping")
@@ -377,6 +378,7 @@ async def start(
         idea=idea,
         budget_usd=budget_usd,
         variant_id=variant_id,
+        coordination=coordination,
         messages=[],
     )
     session.add(scoping)
@@ -467,6 +469,7 @@ async def to_mission(session: AsyncSession, settings: Settings, scoping_id: uuid
         run=run,
         prd=scoping.prd,
         variant_id=scoping.variant_id,
+        coordination=scoping.coordination,
     )
     scoping.status = "started"
     scoping.mission_id = mission.id

@@ -289,6 +289,8 @@ class EvalTask(Base):
     prompt: Mapped[str] = mapped_column(Text)
     acceptance_tests: Mapped[list[Any]] = mapped_column(default=list)
     expected_complexity: Mapped[str] = mapped_column(String(8))
+    # 'feature' (one function in the to-do core) or 'mission' (a whole app, PRD §15.1).
+    kind: Mapped[str] = mapped_column(String(8), default="feature", server_default="feature")
 
 
 class EvalRun(Base):
@@ -309,6 +311,23 @@ class EvalRun(Base):
     retries: Mapped[int] = mapped_column(Integer, default=0)
     fallback_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = _created_at()
+    # Experiment trials (PRD §15.2): which experiment and condition, which repeat, and the
+    # settings it ran under, so a result can be reproduced and compared.
+    experiment: Mapped[str | None] = mapped_column(String(8), index=True)
+    condition: Mapped[str | None] = mapped_column(String(64))
+    repeat: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    config: Mapped[dict[str, Any]] = mapped_column(default=dict, server_default="{}")
+    benchmark_version: Mapped[str | None] = mapped_column(String(16))
+    mission_id: Mapped[uuid.UUID | None] = _fk("missions.id", nullable=True, ondelete="SET NULL")
+    # How the trial ended (the mission's status, or `error` when it could not be run) and
+    # whether the hidden tests all passed (measured by the grader, not claimed by an agent).
+    status: Mapped[str | None] = mapped_column(String(16))
+    passed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    needs_you: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    escalations: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    tokens_in: Mapped[int | None] = mapped_column(Integer)
+    tokens_out: Mapped[int | None] = mapped_column(Integer)
+    error: Mapped[str | None] = mapped_column(Text)
 
 
 class RoutingLabel(Base):
@@ -350,6 +369,11 @@ class Mission(Base):
     validation_contract: Mapped[list[Any]] = mapped_column(default=list)
     # The prompt variant this mission runs under (prompt_variants.id), if any.
     variant_id: Mapped[str | None] = mapped_column(String(32))
+    # How the team shares state (PRD §9.8): 'blackboard' (the mission board and folder, readable
+    # through tools) or 'messaging' (workers get only what the orchestrator sends).
+    coordination: Mapped[str] = mapped_column(
+        String(16), default="blackboard", server_default="blackboard"
+    )
 
 
 class PluginRow(Base):
@@ -460,7 +484,9 @@ class ScopingSession(Base):
     budget_usd: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
     mission_id: Mapped[uuid.UUID | None] = _fk("missions.id", nullable=True, ondelete="SET NULL")
     variant_id: Mapped[str | None] = mapped_column(String(32))  # the prompt variant it runs under
-    variant_id: Mapped[str | None] = mapped_column(String(32))
+    coordination: Mapped[str] = mapped_column(
+        String(16), default="blackboard", server_default="blackboard"
+    )
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 
