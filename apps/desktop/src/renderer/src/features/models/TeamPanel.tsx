@@ -133,7 +133,7 @@ export function TeamPanel({ api, data }: Props) {
   )
 }
 
-function ProposalRow({ proposal, persona, label }: { proposal: Proposal; persona: string; label: string | null }) {
+export function ProposalRow({ proposal, persona, label }: { proposal: Proposal; persona: string; label: string | null }) {
   return (
     <li className="team__proposal" data-outcome={proposal.outcome}>
       <strong>{persona}</strong>{' '}

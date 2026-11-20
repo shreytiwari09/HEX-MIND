@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import type { ApiClient } from '../../lib/api'
 import { describeError } from '../missions/actions'
 import { AddConnection } from './AddConnection'
+import { AutoSetup } from './AutoSetup'
 import type { Connection, ConnectionResult } from './types'
 import type { ModelsData } from './useModelsData'
 
@@ -15,6 +16,13 @@ interface Props {
 export function ConnectionsPanel({ api, data }: Props) {
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [setupOpen, setSetupOpen] = useState(false)
+
+  // Models you can use but a team with no model chosen: offer the one-click setup, once.
+  useEffect(() => {
+    if (data.loaded && data.catalog.length > 0 && data.assignments.length === 0) setSetupOpen(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.loaded])
 
   const report = (result: ConnectionResult) => {
     const { connection, test } = result
@@ -26,6 +34,7 @@ export function ConnectionsPanel({ api, data }: Props) {
           ? `${connection.name} was added, but the test failed: ${test.error ?? 'unknown error'}`
           : `${connection.name} was added.`
     )
+    if (test?.ok) setSetupOpen(true)
     void data.reload()
   }
 
@@ -57,6 +66,7 @@ export function ConnectionsPanel({ api, data }: Props) {
           {error}
         </p>
       )}
+      {setupOpen && <AutoSetup api={api} data={data} onClose={() => setSetupOpen(false)} />}
       {data.loaded && data.connections.length === 0 && (
         <p className="mission__muted">No connections yet. Add one below to let the team use its models.</p>
       )}
