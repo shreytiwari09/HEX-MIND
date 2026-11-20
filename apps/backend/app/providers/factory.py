@@ -58,6 +58,7 @@ def build_providers(
         sessionmaker,
         order=settings.provider_order,
         order_by_complexity=settings.provider_order_by_complexity,
+        order_by_purpose=settings.provider_order_by_purpose,
         quota_cooldown_s=settings.quota_cooldown_s,
     )
     router.cache = ResponseCache(sessionmaker, settings.response_cache)

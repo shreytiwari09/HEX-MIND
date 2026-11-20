@@ -232,8 +232,10 @@ export interface ScopingSession {
   /** Advanced research: researchers looked things up on the web before the PM planned. */
   research?: boolean
   research_notes?: ResearchNotes | null
-  /** What the PM's calls cost so far, from the provider layer. */
+  /** What the calls cost so far, from the provider layer: only calls with a known price. */
   cost_usd: number
+  /** Calls that answered with no known price, so `cost_usd` does not include them. */
+  unpriced_calls?: number
   created_at: string
   updated_at: string
 }
@@ -243,12 +245,23 @@ export interface ScopingSession {
 export interface ResearchFinding {
   question: string
   answer: string
-  sources: { title: string; url: string }[]
+  sources: { title: string; url: string; read?: boolean }[]
+  /** Each fact with its source and the quote the backend looked for in what the researcher read. */
+  claims?: ResearchClaim[]
   gaps: string
   searches: number
   pages: number
   credits: number | null
   error: string | null
+}
+
+export interface ResearchClaim {
+  claim: string
+  url: string
+  title: string
+  quote: string
+  /** verified: the quote is on the page it read. snippet: only in a search snippet. */
+  status: 'verified' | 'snippet' | 'unverified'
 }
 
 export interface ResearchNotes {

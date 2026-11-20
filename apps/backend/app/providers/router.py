@@ -84,6 +84,7 @@ class ProviderRouter:
         *,
         order: list[str] | None = None,
         order_by_complexity: dict[str, list[str]] | None = None,
+        order_by_purpose: dict[str, list[str]] | None = None,
         max_attempts: int = 3,
         backoff_s: float = 0.5,
         max_backoff_s: float = 20.0,
@@ -98,6 +99,10 @@ class ProviderRouter:
         self._order = [n for n in (order or [a.name for a in adapters]) if n in self._adapters]
         self._order_by_complexity = {
             k: [n for n in v if n in self._adapters] for k, v in (order_by_complexity or {}).items()
+        }
+        # A call's purpose ('research') can have its own order, ahead of the complexity order.
+        self._order_by_purpose = {
+            k: [n for n in v if n in self._adapters] for k, v in (order_by_purpose or {}).items()
         }
         self._sessionmaker = sessionmaker
         self._max_attempts = max_attempts
@@ -148,8 +153,14 @@ class ProviderRouter:
             for name in self._adapters
         }
 
-    def candidates(self, complexity: str | None) -> list[ProviderAdapter]:
-        order = (complexity and self._order_by_complexity.get(complexity)) or self._order
+    def candidates(
+        self, complexity: str | None, purpose: str | None = None
+    ) -> list[ProviderAdapter]:
+        order = (
+            (purpose and self._order_by_purpose.get(purpose))
+            or (complexity and self._order_by_complexity.get(complexity))
+            or self._order
+        )
         return [
             self._adapters[name]
             for name in order
@@ -186,7 +197,7 @@ class ProviderRouter:
                 return await self._refused(request, ctx, f"{provider}: {privacy.why_blocked()}")
             return (await self._attempt(self._adapters[provider], request, ctx, None)).result
 
-        chain = self.candidates(ctx.complexity)
+        chain = self.candidates(ctx.complexity, request.purpose)
         first_failed: str | None = None
         previous: tuple[str, str] | None = None  # (provider, why we moved on)
         last: _Attempt | None = None

@@ -8,12 +8,12 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from app.agents import variants
 from app.api.deps import ServicesDep, SessionDep, SettingsDep
 from app.api.missions import MissionOut, _mission_out
-from app.db.models import LLMCall, Project, ScopingSession
+from app.db.models import Project, ScopingSession
 from app.missions import scoping, service
 from app.missions.models import Coordination, MissionPlan
 
@@ -64,17 +64,17 @@ class ScopingOut(BaseModel):
     coordination: str = "blackboard"
     research: bool = False
     research_notes: dict[str, Any] | None = None
-    # What the PM's calls cost so far (from llm_calls, not estimated).
+    # What the calls cost so far (from llm_calls, not estimated). It covers only calls whose
+    # model has a known price: `unpriced_calls` says how many answered without one.
     cost_usd: float
+    unpriced_calls: int = 0
     created_at: datetime
     updated_at: datetime
 
 
 async def _out(session: SessionDep, row: ScopingSession) -> ScopingOut:
     await session.refresh(row)
-    cost = await session.scalar(
-        select(func.coalesce(func.sum(LLMCall.est_cost_usd), 0)).where(LLMCall.run_id == row.run_id)
-    )
+    spent = await service.usage(session, row.run_id)  # the same totals a mission reports
     return ScopingOut(
         id=row.id,
         project_id=row.project_id,
@@ -91,7 +91,8 @@ async def _out(session: SessionDep, row: ScopingSession) -> ScopingOut:
         coordination=row.coordination,
         research=row.research,
         research_notes=row.research_notes,
-        cost_usd=float(cost or 0),
+        cost_usd=float(spent.spent_usd),
+        unpriced_calls=spent.unpriced_calls,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )

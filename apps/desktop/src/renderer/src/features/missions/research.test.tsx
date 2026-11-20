@@ -13,8 +13,31 @@ const NOTES: Notes = {
   findings: [
     {
       question: 'How do sessions work?',
-      answer: 'Sessions live on the server.',
-      sources: [{ title: 'session middleware', url: 'https://expressjs.com/en/resources/middleware/session' }],
+      answer: 'Express keeps sessions on the server side.',
+      sources: [{ title: 'session middleware', url: 'https://expressjs.com/en/resources/middleware/session', read: true }],
+      claims: [
+        {
+          claim: 'Sessions live on the server.',
+          url: 'https://expressjs.com/en/resources/middleware/session',
+          title: 'session middleware',
+          quote: 'session data is stored server-side',
+          status: 'verified'
+        },
+        {
+          claim: 'Cookies carry only the session id.',
+          url: 'https://expressjs.com/en/resources/middleware/session',
+          title: 'session middleware',
+          quote: 'the cookie contains only the id',
+          status: 'snippet'
+        },
+        {
+          claim: 'It scales without a store.',
+          url: 'https://expressjs.com/en/resources/middleware/session',
+          title: 'session middleware',
+          quote: '',
+          status: 'unverified'
+        }
+      ],
       gaps: '1 cited source(s) were left out: the researcher never saw them.',
       searches: 1,
       pages: 2,
@@ -147,8 +170,57 @@ describe('the Advanced research switch', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start scoping' }))
 
     const region = await screen.findByRole('region', { name: 'Research' })
-    expect(within(region).getByText('Sessions live on the server.')).toBeInTheDocument()
+    expect(within(region).getByText('Express keeps sessions on the server side.')).toBeInTheDocument()
     await waitFor(() => expect(api.post).toHaveBeenCalled())
+  })
+})
+
+describe('the research notes: claims', () => {
+  it('say for each claim whether its quote was found in what the researcher read', () => {
+    render(<ResearchNotes notes={NOTES} />)
+
+    const claims = screen.getByRole('list', { name: 'Claims' })
+    const row = (text: string) => within(claims).getByText(text, { exact: false }).closest('li') as HTMLElement
+    expect(row('Sessions live on the server.')).toHaveAttribute('data-status', 'verified')
+    expect(within(row('Sessions live on the server.')).getByText('[quote found on the page]')).toBeInTheDocument()
+    expect(within(row('Cookies carry only')).getByText('[search snippet only]')).toBeInTheDocument()
+    expect(within(row('It scales without')).getByText('[not checked]')).toBeInTheDocument()
+    expect(within(row('Sessions live on the server.')).getByText(/session data is stored server-side/)).toBeInTheDocument()
+    // The warning never lets "found on the page" read as "proved true".
+    expect(screen.getByText(/that is not proof the claim is true/)).toBeInTheDocument()
+  })
+
+  it('mark a source that was only a search result, and cope with notes saved before claims existed', () => {
+    const old = { ...NOTES, findings: [{ ...NOTES.findings[0], claims: undefined, sources: [{ title: 'A', url: 'https://a.example/x', read: false }] }] }
+    render(<ResearchNotes notes={old} />)
+
+    expect(screen.queryByRole('list', { name: 'Claims' })).toBeNull()
+    expect(screen.getByText(/not opened, search result only/)).toBeInTheDocument()
+  })
+})
+
+describe('the cost on the scoping screen', () => {
+  const open = async (extra: Partial<ScopingSession>) => {
+    const api = makeApi({ '/scoping': session({ cost_usd: 0.0092, ...extra }) })
+    render_(api)
+    idea()
+    fireEvent.click(screen.getByRole('button', { name: 'Start scoping' }))
+    await screen.findByRole('heading', { name: 'Scoping with the PM' })
+  }
+
+  it('says how many calls are not in the figure', async () => {
+    await open({ unpriced_calls: 4 })
+    expect(screen.getByText(/cost so far \$0\.009 \(not counting 4 calls with no known price\)/)).toBeInTheDocument()
+  })
+
+  it('uses the singular, and says nothing when every call had a price', async () => {
+    await open({ unpriced_calls: 1 })
+    expect(screen.getByText(/not counting 1 call with no known price/)).toBeInTheDocument()
+  })
+
+  it('stays plain when all calls were priced', async () => {
+    await open({ unpriced_calls: 0 })
+    expect(screen.queryByText(/not counting/)).toBeNull()
   })
 })
 
@@ -156,7 +228,7 @@ describe('the research notes', () => {
   it('show answers with the sources actually read, what was not found, and counts', () => {
     render(<ResearchNotes notes={NOTES} />)
 
-    expect(screen.getByText('Sessions live on the server.')).toBeInTheDocument()
+    expect(screen.getByText('Express keeps sessions on the server side.')).toBeInTheDocument()
     const sources = screen.getByRole('list', { name: 'Sources' })
     expect(within(sources).getByText('https://expressjs.com/en/resources/middleware/session')).toBeInTheDocument()
     expect(screen.getByText(/the researcher never saw them/)).toBeInTheDocument()

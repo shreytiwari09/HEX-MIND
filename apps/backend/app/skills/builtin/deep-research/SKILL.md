@@ -31,7 +31,16 @@ You have a small budget: a few searches and a few pages. Spend it on the questio
 - **Only what you read.** Cite only addresses the tools showed you. Never fill a gap from memory
   and present it as found: say what you could not find.
 
+## Claims and quotes
+Every fact the plan may rely on is a **claim**: the fact in one sentence, the address it came
+from, and a short quote (at least 20 characters, under 200) copied exactly from the page or
+search snippet that says it. The app looks each quote up in what you were shown and marks the
+claims it cannot find, so:
+- copy the words exactly; a paraphrase inside a quote counts as not found;
+- prefer pages you read over search snippets, and say when a claim rests on a snippet only;
+- one claim, one source: do not stack several sources behind one sentence.
+
 ## The answer
 Short and concrete, written for someone deciding what to build: the finding, the reason, the main
-limit or risk, and the version it applies to. Then the sources that carried it, and what was not
-found. Stop as soon as the question is answered or the budget is used.
+limit or risk, and the version it applies to. Then two to six claims with their sources and
+quotes, and what was not found. Stop as soon as the question is answered or the budget is used.

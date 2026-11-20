@@ -101,7 +101,7 @@ describe('starting a mission from an idea', () => {
     expect(api.post).toHaveBeenCalledWith('/scoping', { project_id: 'p1', idea: 'A todo app', budget_usd: undefined })
     const chat = screen.getByRole('list', { name: 'Conversation' })
     expect(within(chat).getByText('Who uses it?')).toBeInTheDocument()
-    expect(screen.getByText(/PM cost so far \$0\.012/)).toBeInTheDocument()
+    expect(screen.getByText(/cost so far \$0\.012/)).toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Plan' })).toBeNull()
   })
 

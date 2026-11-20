@@ -408,6 +408,32 @@ async def test_per_complexity_order(app: FastAPI) -> None:
     assert (low.content, high.content) == ("from ollama", "from gemini")
 
 
+async def test_a_purpose_can_have_its_own_order_ahead_of_the_complexity_order(
+    app: FastAPI,
+) -> None:
+    groq, gemini = FakeProvider("groq"), FakeProvider("gemini")
+    router = _router(
+        app, [groq, gemini], Clock(), order=["groq", "gemini"],
+        order_by_complexity={"low": ["groq", "gemini"]},
+        order_by_purpose={"research": ["gemini", "groq"]},
+    )  # fmt: skip
+    research = LLMRequest(purpose="research", messages=REQUEST.messages)
+
+    plain = await router.complete(REQUEST)
+    searched = await router.complete(research)
+    searched_low = await router.complete(research, CallContext(complexity="low"))
+
+    assert (plain.content, searched.content, searched_low.content) == (
+        "from groq", "from gemini", "from gemini",
+    )  # fmt: skip
+    # a provider with no key is skipped, never a failure
+    only_groq = _router(
+        app, [groq, FakeProvider("gemini", configured=False)], Clock(),
+        order_by_purpose={"research": ["gemini", "groq"]},
+    )  # fmt: skip
+    assert (await only_groq.complete(research)).content == "from groq"
+
+
 async def test_explicit_provider_bypasses_policy(app: FastAPI) -> None:
     groq = FakeProvider("groq", [ProviderError("q", kind="quota")])
     ollama = FakeProvider("ollama")

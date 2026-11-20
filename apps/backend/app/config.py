@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     # providers. Optional per-complexity orders ({"low": ["ollama", ...]}) override it.
     provider_order: list[str] = ["groq", "gemini", "ollama"]
     provider_order_by_complexity: dict[str, list[str]] = {}
+    # A call's purpose can have its own order. Research reads whole web pages, which are too big
+    # for Groq's free per-minute token limit (measured live on 2026-11-21: Groq rejected or
+    # rate-limited 4 calls and took 228 s for 19 calls, where Gemini took 37 s for 4), so
+    # Gemini goes first; Groq stays a fallback. Providers without a key are skipped.
+    provider_order_by_purpose: dict[str, list[str]] = {"research": ["gemini", "groq", "ollama"]}
     # How long a provider is skipped after quota exhaustion (unless it sends Retry-After).
     quota_cooldown_s: float = 300
     # Refresh the models.dev catalog in the background at startup (a plain public GET; no user

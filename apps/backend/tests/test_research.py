@@ -14,7 +14,7 @@ from app.db.models import LLMCall, Project, ScopingSession
 from app.events.log import list_events
 from app.guardrails.injection import MARK
 from app.providers.base import Completion, LLMRequest, ProviderError, ToolCall
-from app.research.agent import MAX_PAGES, MAX_SEARCHES, MAX_TOOL_CALLS
+from app.research.agent import FETCH_CHARS, MAX_PAGES, MAX_SEARCHES, MAX_TOOL_CALLS
 from app.research.search import SEARCH_KEY_REF
 from tests.conftest import ScriptedAdapter, use_adapter
 from tests.test_scoping import IDEA, asking
@@ -31,9 +31,18 @@ def questions_json(*questions: str) -> str:
     return json.dumps({"questions": list(questions)})
 
 
-def final_note(answer: str, *urls: str) -> str:
+PAGE_QUOTE = "Sessions live on the server."  # on the page DOCS serves
+SNIPPET_QUOTE = "Simple session middleware for Express."  # in the search result for DOCS
+
+
+def final_note(answer: str, *claims: tuple[str, str], gaps: str = "") -> str:
+    """A researcher's final answer: (address, quote) pairs become claims."""
     return json.dumps(
-        {"answer": answer, "sources": [{"title": "t", "url": u} for u in urls], "gaps": ""}
+        {
+            "answer": answer,
+            "claims": [{"claim": f"fact from {u}", "url": u, "quote": q} for u, q in claims],
+            "gaps": gaps,
+        }
     )
 
 
@@ -54,7 +63,13 @@ class Team:
             return call("web_search", query=question[:40])
         if len(tool_results) == 1:
             return call("web_fetch", url=DOCS)
-        return Completion(content=final_note(f"Answer to: {question}", DOCS, INVENTED))
+        return Completion(
+            content=final_note(
+                f"Answer to: {question}",
+                (DOCS, PAGE_QUOTE),
+                (INVENTED, "words copied from a page it never saw"),
+            )
+        )
 
     def __call__(self, request: LLMRequest) -> Completion:
         prompt = "\n".join(m.content or "" for m in request.messages)
@@ -259,7 +274,14 @@ async def test_a_source_the_search_showed_counts_even_if_its_page_was_not_read(
     def searches_only(request: LLMRequest, tool_results: list[str], question: str) -> Completion:
         if not tool_results:
             return call("web_search", query="express session")
-        return Completion(content=final_note("From the results.", tutorial, DOCS, INVENTED))
+        return Completion(
+            content=final_note(
+                "From the results.",
+                (tutorial, "How to."),
+                (DOCS, SNIPPET_QUOTE),
+                (INVENTED, "words copied from a page it never saw"),
+            )
+        )
 
     use_adapter(app, ScriptedAdapter(Team([Q1], researcher=searches_only)))
 
@@ -267,7 +289,10 @@ async def test_a_source_the_search_showed_counts_even_if_its_page_was_not_read(
 
     (finding,) = session["research_notes"]["findings"]
     assert [s["url"] for s in finding["sources"]] == [tutorial, DOCS]  # both were in the results
+    assert [s["read"] for s in finding["sources"]] == [False, False]  # none of them was read
     assert (finding["searches"], finding["pages"]) == (1, 0)
+    # The quote in the search snippet is found there, and only there; "How to." is too short.
+    assert [c["status"] for c in finding["claims"]] == ["unverified", "snippet"]
 
 
 async def test_a_failing_researcher_leaves_a_plain_error_and_the_pm_still_plans(
@@ -291,7 +316,7 @@ async def test_a_researcher_that_skips_the_web_says_so(
     app: FastAPI, client: httpx.AsyncClient, repo: Path, web: Site
 ) -> None:
     def lazy(request: LLMRequest, tool_results: list[str], question: str) -> Completion:
-        return Completion(content=final_note("From memory.", DOCS))
+        return Completion(content=final_note("From memory.", (DOCS, PAGE_QUOTE)))
 
     use_adapter(app, ScriptedAdapter(Team([Q1], researcher=lazy)))
 
@@ -341,3 +366,101 @@ async def test_the_migration_adds_the_columns(app: FastAPI) -> None:
             )
         }
     assert {"research", "research_notes"} <= found
+
+
+async def test_every_claim_quote_is_checked_against_the_page_the_researcher_read(
+    app: FastAPI, client: httpx.AsyncClient, repo: Path, web: Site
+) -> None:
+    quotes = {
+        "exact": PAGE_QUOTE,
+        "loose": "sessions LIVE on the server",  # case and punctuation do not matter
+        "invented": "Sessions are stored in the browser cookie itself.",
+        "paraphrase": "Session data is kept on the server side.",
+        "short": "the server.",  # on the page, but too short to prove anything
+        "none": "",
+    }
+
+    def claims_all(request: LLMRequest, tool_results: list[str], question: str) -> Completion:
+        if not tool_results:
+            return call("web_fetch", url=DOCS)
+        return Completion(content=final_note("Mixed.", *[(DOCS, q) for q in quotes.values()]))
+
+    team = Team([Q1], researcher=claims_all)
+    use_adapter(app, ScriptedAdapter(team))
+
+    session = (await begin(client, repo, research=True, research_confirmed=True)).json()
+
+    (finding,) = session["research_notes"]["findings"]
+    by_quote = {c["quote"]: c["status"] for c in finding["claims"]}
+    assert by_quote == {
+        quotes["exact"]: "verified",
+        quotes["loose"]: "verified",
+        quotes["invented"]: "unverified",
+        quotes["paraphrase"]: "unverified",
+        quotes["short"]: "unverified",
+        "": "unverified",
+    }
+    assert [s["read"] for s in finding["sources"]] == [True]  # the page itself was read
+    # The PM is told, claim by claim, how far each can be trusted.
+    prompt = team.pm_prompts[0]
+    assert "the quote is on the page it read" in prompt and "not checked" in prompt
+
+
+async def test_when_no_claim_can_be_checked_the_notes_say_so(
+    app: FastAPI, client: httpx.AsyncClient, repo: Path, web: Site
+) -> None:
+    def invented(request: LLMRequest, tool_results: list[str], question: str) -> Completion:
+        if not tool_results:
+            return call("web_fetch", url=DOCS)
+        return Completion(
+            content=final_note("Plausible.", (DOCS, "A sentence the page never says."))
+        )
+
+    use_adapter(app, ScriptedAdapter(Team([Q1], researcher=invented)))
+
+    session = (await begin(client, repo, research=True, research_confirmed=True)).json()
+
+    (finding,) = session["research_notes"]["findings"]
+    assert finding["claims"][0]["status"] == "unverified"
+    assert "None of the claims could be checked" in finding["gaps"]
+
+
+async def test_the_researcher_is_asked_for_claims_with_exact_quotes_and_pages_are_short(
+    app: FastAPI, client: httpx.AsyncClient, repo: Path, web: Site
+) -> None:
+    web.pages[DOCS] = html("<title>Long</title><p>" + "word " * 5000 + "</p>")
+    team = Team([Q1])
+    use_adapter(app, ScriptedAdapter(team))
+
+    await begin(client, repo, research=True, research_confirmed=True)
+
+    assert (
+        "copied exactly" in team.research_prompts[0]
+        and "never invent one" in team.research_prompts[0]
+    )
+    page = next(r for r in team.research_seen[-1] if "Title: Long" in r)
+    assert len(page) < FETCH_CHARS + 300 and "[page cut]" in page  # a short excerpt, and it says so
+
+
+async def test_the_session_cost_says_how_many_calls_had_no_known_price(
+    app: FastAPI, client: httpx.AsyncClient, repo: Path, web: Site
+) -> None:
+    from decimal import Decimal
+
+    team = Team([Q1])
+
+    def priced_pm_only(request: LLMRequest) -> Completion:
+        done = team(request)
+        if request.purpose == "planner":
+            return done.model_copy(update={"est_cost_usd": Decimal("0.01")})
+        return done  # the researcher's model has no known price
+
+    use_adapter(app, ScriptedAdapter(priced_pm_only))
+
+    session = (await begin(client, repo, research=True, research_confirmed=True)).json()
+
+    async with app.state.sessionmaker() as db:
+        calls = list(await db.scalars(select(LLMCall).where(LLMCall.run_id == session["run_id"])))
+    pm_calls = [c for c in calls if c.purpose == "planner"]
+    assert session["cost_usd"] == pytest.approx(0.01 * len(pm_calls))
+    assert session["unpriced_calls"] == len(calls) - len(pm_calls) > 0  # said, not hidden

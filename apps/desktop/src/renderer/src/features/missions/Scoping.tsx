@@ -47,7 +47,9 @@ export function Scoping({ api, session, onSession, onCreated, onClose }: Props) 
     <section className="new-mission" aria-label="Scoping">
       <h2 className="mission__title">{planned ? 'Review the plan' : 'Scoping with the PM'}</h2>
       <p className="mission__muted">
-        {session.idea} · PM cost so far {formatUsd(session.cost_usd)}
+        {session.idea} · cost so far {formatUsd(session.cost_usd)}
+        {(session.unpriced_calls ?? 0) > 0 &&
+          ` (not counting ${session.unpriced_calls} call${session.unpriced_calls === 1 ? '' : 's'} with no known price)`}
       </p>
 
       <ol className="scoping__chat" aria-label="Conversation">
