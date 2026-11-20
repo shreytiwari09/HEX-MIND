@@ -102,6 +102,46 @@ def _hosted(handler, *, api_key: str | None = "secret-key") -> OpenAICompatAdapt
     )
 
 
+async def test_tools_without_arguments_are_sent_in_a_form_groq_accepts() -> None:
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}], "usage": {}})
+
+    def tool(name: str, parameters: dict | None) -> dict:
+        function: dict = {"name": name, "description": "d"}
+        if parameters is not None:
+            function["parameters"] = parameters
+        return {"type": "function", "function": function}
+
+    tools = [
+        tool("git_status", {"type": "object", "required": []}),  # what Groq refused
+        tool("list_features", {"type": "object", "properties": {}, "required": []}),
+        tool("read_file", {"type": "object", "properties": {"path": {"type": "string"}},
+                           "required": ["path"]}),
+        tool("git_log", {"type": "object", "properties": {"count": {"type": "integer"}}}),
+        tool("bare", None),
+    ]  # fmt: skip
+    request = LLMRequest(
+        purpose="coder", messages=[ChatMessage(role="user", content="hi")], tools=tools
+    )
+
+    await _hosted(handler).complete(request)
+
+    sent = {t["function"]["name"]: t["function"]["parameters"] for t in seen["tools"]}
+    assert sent["git_status"] == {"type": "object", "properties": {}}
+    assert sent["list_features"] == {"type": "object", "properties": {}}
+    assert sent["bare"] == {"type": "object", "properties": {}}
+    # tools that already had arguments keep them, and their required list
+    assert sent["read_file"]["required"] == ["path"] and "path" in sent["read_file"]["properties"]
+    assert sent["git_log"]["properties"] == {"count": {"type": "integer"}}
+    assert "required" not in sent["git_log"]
+    # the request the caller made is untouched
+    assert request.tools[0]["function"]["parameters"] == {"type": "object", "required": []}
+    assert tools[0]["function"]["parameters"] == {"type": "object", "required": []}
+
+
 async def test_hosted_request_and_response_mapping() -> None:
     seen: dict = {}
 

@@ -128,7 +128,7 @@ class OpenAICompatAdapter:
             "temperature": request.temperature,
         }
         if request.tools:
-            body["tools"] = request.tools
+            body["tools"] = _clean_tools(request.tools)
             body["tool_choice"] = "auto"
         if request.stop:
             body["stop"] = request.stop[:4]
@@ -176,6 +176,31 @@ class OpenAICompatAdapter:
                 self._pricing_name, self.model, input_tokens, output_tokens
             ),
         )
+
+
+def _clean_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Tool definitions in the form every OpenAI-compatible provider accepts.
+
+    A tool that takes no arguments reaches us as an object schema with an empty `required` list
+    and no `properties` (the framework strips the empty properties). Groq rejects that whole
+    request with HTTP 400 ("'required' present but 'properties' is missing"), so every call that
+    offers such a tool (git_status, list_features) failed there. Fix: an object schema always
+    has `properties`, and an empty `required` is left out. The caller's request is not changed.
+    """
+    cleaned: list[dict[str, Any]] = []
+    for tool in tools:
+        function = tool.get("function")
+        if not isinstance(function, dict):
+            cleaned.append(tool)
+            continue
+        parameters = dict(function.get("parameters") or {"type": "object"})
+        if parameters.get("type", "object") == "object":
+            parameters["type"] = "object"
+            parameters["properties"] = dict(parameters.get("properties") or {})
+            if not parameters.get("required"):
+                parameters.pop("required", None)
+        cleaned.append({**tool, "function": {**function, "parameters": parameters}})
+    return cleaned
 
 
 def _salvage_pseudo_tool_call(

@@ -299,3 +299,18 @@ async def test_from_an_idea_to_a_finished_mission(
     row, features, _ = await load(app, mission["id"])
     assert row.status == "completed"
     assert {f.status for f in features.values()} == {"done"}
+
+
+async def test_the_pm_is_told_to_copy_exact_interfaces_from_the_idea_into_the_plan(
+    app: FastAPI, client: httpx.AsyncClient, repo: Path
+) -> None:
+    # Found in the first live mission: a plan that said "currentStreak calculates streaks" lost
+    # the signatures the idea gave, so the builders and QA invented a different interface.
+    pm = PM(asking("Who uses it?"))
+    use_adapter(app, ScriptedAdapter(pm))
+
+    await start(client, repo)
+
+    prompt = pm.prompts[0]
+    assert "copy them word for word" in prompt
+    assert "builders and QA see only the plan" in prompt

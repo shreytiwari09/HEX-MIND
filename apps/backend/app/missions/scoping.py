@@ -256,6 +256,10 @@ How to plan:
 - If the project has no {CONTRACT_PATH}, the first feature is DevOps writing the scaffold and
   {CONTRACT_PATH} (stack, image, install, test, typecheck, lint, acceptance, start, port).
 - Ids: lowercase-with-dashes for milestones and features; criteria are VC-1, VC-2, ...
+- Exact interfaces are the user's, not yours to reword: when the idea names functions, their
+  parameters, file names, data formats or example values, copy them word for word into the
+  feature's description and expected behavior and into the validation criteria that check them.
+  The builders and QA see only the plan, so anything you leave out they will invent.
 - Validators: code-reviewer and security on every milestone; add qa where the validation
   contract has unit test or api test criteria for that milestone's features.
 - The validation contract states checkable behaviour from the user's point of view; "how" is
