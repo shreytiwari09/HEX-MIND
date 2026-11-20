@@ -47,6 +47,7 @@ import { PluginList } from './features/plugins/PluginList'
 import { PluginPanel } from './features/plugins/PluginPanel'
 import { usePlugins } from './features/plugins/usePlugins'
 import { PrivacyPanel } from './features/settings/PrivacyPanel'
+import { SearchKeyPanel } from './features/settings/SearchKeyPanel'
 import { ProvidersPanel } from './features/settings/ProvidersPanel'
 import { DiffView } from './features/runs/DiffView'
 import { RunEventsPanel } from './features/runs/RunEventsPanel'
@@ -381,6 +382,7 @@ export function App() {
         ) : view === 'settings' && project ? (
           <div className="settings">
             <PrivacyPanel key={project.id} api={api} projectId={project.id} projectName={project.name} />
+            <SearchKeyPanel api={api} />
             <NotificationsPanel onChange={setNotify} />
           </div>
         ) : view === 'skills' ? (

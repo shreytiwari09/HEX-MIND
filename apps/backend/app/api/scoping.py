@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, select
 
 from app.agents import variants
@@ -26,6 +26,16 @@ class ScopingCreate(BaseModel):
     budget_usd: Decimal | None = Field(default=None, gt=0, le=10_000)
     variant_id: str | None = Field(default=None, max_length=32)
     coordination: Coordination = "blackboard"
+    # Advanced research: researchers search and read public websites before the PM plans. It
+    # needs `research_confirmed`, the user's tick that they know that.
+    research: bool = False
+    research_confirmed: bool = False
+
+    @model_validator(mode="after")
+    def _research_needs_a_tick(self) -> "ScopingCreate":
+        if self.research and not self.research_confirmed:
+            raise ValueError("confirm that researchers may search the web and read public websites")
+        return self
 
 
 class ScopingReply(BaseModel):
@@ -52,6 +62,8 @@ class ScopingOut(BaseModel):
     mission_id: uuid.UUID | None
     variant_id: str | None = None
     coordination: str = "blackboard"
+    research: bool = False
+    research_notes: dict[str, Any] | None = None
     # What the PM's calls cost so far (from llm_calls, not estimated).
     cost_usd: float
     created_at: datetime
@@ -77,6 +89,8 @@ async def _out(session: SessionDep, row: ScopingSession) -> ScopingOut:
         mission_id=row.mission_id,
         variant_id=row.variant_id,
         coordination=row.coordination,
+        research=row.research,
+        research_notes=row.research_notes,
         cost_usd=float(cost or 0),
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -99,15 +113,19 @@ async def start(body: ScopingCreate, session: SessionDep, services: ServicesDep)
         await variants.get(session, body.variant_id)
     except variants.VariantError as exc:
         raise HTTPException(exc.status_code, str(exc)) from None
-    row = await scoping.start(
-        session,
-        services,
-        project,
-        idea=body.idea,
-        budget_usd=body.budget_usd,
-        variant_id=body.variant_id,
-        coordination=body.coordination,
-    )
+    try:
+        row = await scoping.start(
+            session,
+            services,
+            project,
+            idea=body.idea,
+            budget_usd=body.budget_usd,
+            variant_id=body.variant_id,
+            coordination=body.coordination,
+            advanced_research=body.research,
+        )
+    except scoping.ScopingError as exc:
+        raise _refused(exc) from None
     return await _out(session, row)
 
 

@@ -229,8 +229,31 @@ export interface ScopingSession {
   error: string | null
   budget_usd: number | null
   mission_id: string | null
+  /** Advanced research: researchers looked things up on the web before the PM planned. */
+  research?: boolean
+  research_notes?: ResearchNotes | null
   /** What the PM's calls cost so far, from the provider layer. */
   cost_usd: number
   created_at: string
   updated_at: string
+}
+
+/** What one researcher found for one question. `sources` are only addresses its tools really
+ * showed it; `credits` is Tavily's own figure, null when unknown. */
+export interface ResearchFinding {
+  question: string
+  answer: string
+  sources: { title: string; url: string }[]
+  gaps: string
+  searches: number
+  pages: number
+  credits: number | null
+  error: string | null
+}
+
+export interface ResearchNotes {
+  at: string
+  questions: string[]
+  findings: ResearchFinding[]
+  credits: number | null
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import type { ApiClient } from '../../lib/api'
+import { SearchKeyPanel, type SearchStatus } from '../settings/SearchKeyPanel'
 import { describeError } from './actions'
 import { Scoping } from './Scoping'
 import type { Mission, ScopingSession } from './types'
@@ -69,6 +70,9 @@ export function NewMission({ api, projectId, onCreated, onCancel }: Props) {
       .then((list) => setVariants(Array.isArray(list) ? list : []))
       .catch(() => setVariants([]))
   }, [api])
+  const [research, setResearch] = useState(false)
+  const [researchOk, setResearchOk] = useState(false)
+  const [searchKey, setSearchKey] = useState<SearchStatus | null>(null)
   const [own, setOwn] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -96,7 +100,9 @@ export function NewMission({ api, projectId, onCreated, onCancel }: Props) {
           idea: idea.trim(),
           budget_usd: amount,
           variant_id: variantId || undefined,
-          coordination: coordination === 'messaging' ? coordination : undefined
+          coordination: coordination === 'messaging' ? coordination : undefined,
+          research: research ? true : undefined,
+          research_confirmed: research ? true : undefined
         })
       )
     } catch (err) {
@@ -151,6 +157,33 @@ export function NewMission({ api, projectId, onCreated, onCancel }: Props) {
           <option value="messaging">Messages only: each agent gets just what the orchestrator sends</option>
         </select>
       </label>
+      <fieldset className="new-mission__field new-mission__research">
+        <legend>Advanced research (optional)</legend>
+        <label className="persona-editor__skill">
+          <input type="checkbox" checked={research} onChange={(event) => setResearch(event.target.checked)} />
+          <span>
+            <strong>Look things up on the web before planning</strong>{' '}
+            <span className="mission__muted">
+              Researchers search the web and read public pages, and the PM uses what they find. Off by default;
+              it costs a little more time and a few search credits.
+            </span>
+          </span>
+        </label>
+        {research && (
+          <>
+            <p className="mission__muted">
+              The researchers can only read public websites. They cannot change your files. Your idea may shape the
+              words they search for (anything that looks like a secret is removed first), and those searches go to
+              Tavily. Projects whose privacy mode keeps everything on this machine cannot use it.
+            </p>
+            <label className="persona-editor__skill">
+              <input type="checkbox" checked={researchOk} onChange={(event) => setResearchOk(event.target.checked)} />
+              <span>I understand: researchers may search the web and read public websites for this mission.</span>
+            </label>
+            <SearchKeyPanel api={api} onStatus={setSearchKey} />
+          </>
+        )}
+      </fieldset>
       {error && (
         <p role="alert" className="mission__error">
           {error}
@@ -162,7 +195,20 @@ export function NewMission({ api, projectId, onCreated, onCancel }: Props) {
         </p>
       )}
       <div className="new-mission__actions">
-        <button type="submit" className="button button--primary" disabled={busy || idea.trim().length < 3}>
+        <button
+          type="submit"
+          className="button button--primary"
+          disabled={
+            busy || idea.trim().length < 3 || (research && (!researchOk || searchKey?.configured !== true))
+          }
+          title={
+            research && searchKey?.configured !== true
+              ? 'Add a search key first'
+              : research && !researchOk
+                ? 'Confirm that researchers may use the web'
+                : undefined
+          }
+        >
           Start scoping
         </button>
         <button type="button" className="button" onClick={() => setOwn(true)}>

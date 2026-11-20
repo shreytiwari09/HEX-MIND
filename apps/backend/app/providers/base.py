@@ -7,7 +7,7 @@ from typing import Any, Literal, Protocol
 from pydantic import BaseModel, Field
 
 Purpose = Literal[
-    "router", "chat", "summary", "planner", "coder", "reviewer", "judge", "diagnostic"
+    "router", "chat", "summary", "planner", "coder", "reviewer", "judge", "diagnostic", "research"
 ]
 
 

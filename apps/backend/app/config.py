@@ -45,6 +45,12 @@ class Settings(BaseSettings):
         default=None, validation_alias=AliasChoices("HEXMIND_GEMINI_API_KEY", "GEMINI_API_KEY")
     )
     gemini_model: str = "gemini-3.5-flash"
+    # Web search for Advanced research (D62). The key can also be saved in the OS key store,
+    # which is tried first.
+    tavily_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("HEXMIND_TAVILY_API_KEY", "TAVILY_API_KEY", "TAVILY_KEY"),
+    )
 
     # Provider selection policy: tried in this order, skipping unconfigured or unavailable
     # providers. Optional per-complexity orders ({"low": ["ollama", ...]}) override it.

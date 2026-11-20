@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { ApiClient } from '../../lib/api'
 import { describeError } from './actions'
 import { formatUsd } from './progress'
+import { ResearchNotes } from './ResearchNotes'
 import type { Mission, MissionPlanDoc, ScopingSession } from './types'
 
 interface Props {
@@ -64,6 +65,8 @@ export function Scoping({ api, session, onSession, onCreated, onClose }: Props) 
           </li>
         ))}
       </ol>
+
+      {session.research && session.research_notes && <ResearchNotes notes={session.research_notes} />}
 
       {session.error && (
         <div role="alert" className="mission__error">

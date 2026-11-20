@@ -16,6 +16,7 @@ from app.providers.secrets import KeyStore
 
 if TYPE_CHECKING:
     from app.catalog.service import CatalogService
+    from app.research.web import WebFetcher
 
 # (services, run_id, *, requires_planning, requires_review) -> None
 RunExecutor = Callable[..., Awaitable[None]]
@@ -40,6 +41,10 @@ class Services:
     keystore: "KeyStore | None" = None
     catalog: "CatalogService | None" = None
     connection_http: httpx.AsyncClient | None = None
+    # HTTP client for the search service (Advanced research); tests replace it with a fake.
+    research_http: httpx.AsyncClient | None = None
+    # The page reader for researchers; None means a real one is made per research run.
+    research_web: "WebFetcher | None" = None
     mission_tasks: dict[uuid.UUID, "asyncio.Task[None]"] = field(default_factory=dict)
 
     def mission_active(self, mission_id: uuid.UUID) -> bool:

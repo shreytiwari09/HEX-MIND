@@ -504,6 +504,10 @@ class ScopingSession(Base):
     coordination: Mapped[str] = mapped_column(
         String(16), default="blackboard", server_default="blackboard"
     )
+    # Advanced research (PRD D62): researchers looked things up before the PM planned. The notes
+    # are what they found (questions, findings with the sources they really read), or None.
+    research: Mapped[bool] = mapped_column(default=False, server_default="false")
+    research_notes: Mapped[dict[str, Any] | None] = mapped_column()
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 
