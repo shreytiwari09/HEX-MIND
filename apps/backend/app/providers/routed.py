@@ -33,6 +33,7 @@ from app.providers.ollama import OllamaAdapter
 from app.providers.openai_compat import OpenAICompatAdapter
 from app.providers.presets import ProviderPreset, preset_for
 from app.providers.pricing import Pricing
+from app.providers.privacy import privacy_for
 from app.providers.secrets import KeyStore, KeyStoreError
 
 if TYPE_CHECKING:
@@ -105,12 +106,16 @@ class RouteExecutor:
         last: _Attempt | None = None
         skipped: list[str] = []
 
+        privacy = await privacy_for(self._sessionmaker, ctx.run_id)
         for target in route.targets:
             connection, keys = await self._load(target.connection_id)
             if connection is None or not connection.enabled:
                 skipped.append("connection removed or disabled")
                 continue
             preset = preset_for(connection.provider_type)
+            if not privacy.allows_connection(connection.id, local=preset.local):
+                skipped.append(f"{connection.name}: {privacy.why_blocked()}")
+                continue
             now = self._clock()
             usable = [
                 k for k in keys if not k.disabled and self._cooling.get(k.id, (0.0, ""))[0] <= now

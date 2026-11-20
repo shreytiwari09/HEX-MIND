@@ -61,6 +61,10 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(255))
     workspace_path: Mapped[str] = mapped_column(Text, unique=True)
     git_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Which providers may see this project's prompts (providers/privacy.py): any | trusted | local.
+    privacy_mode: Mapped[str] = mapped_column(String(8), default="any", server_default="any")
+    # For "trusted": the connection ids the user trusts with this project.
+    trusted_connections: Mapped[list[Any]] = mapped_column(default=list, server_default="[]")
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 

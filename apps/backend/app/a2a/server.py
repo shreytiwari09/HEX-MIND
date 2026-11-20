@@ -49,6 +49,7 @@ from app.agents.persona import Persona, UnknownPersona, get_persona
 from app.agents.tools import CODER, READ_ONLY, make_tools, tool_summary
 from app.context.repo_map import build_repo_map
 from app.events.log import EventType
+from app.guardrails.injection import MARK, signals_of
 from app.missions.models import AgentReport, MissionContext
 from app.orchestration.services import Services
 from app.plugins.runtime import PluginHost
@@ -179,6 +180,22 @@ class CrewExecutor(AgentExecutor):
         async with self.services.sessionmaker() as session:
             return await route_for(session, persona.id, escalate=escalate)
 
+    def _note_injection(
+        self, hub: TelemetryHub, request: CrewRequest, tool: str, text: str
+    ) -> None:
+        """A tool result the injection guardrail labelled becomes a `guardrail_triggered` event."""
+        signals = _marked_source(text)
+        if signals is None:
+            return
+        hub.record_threadsafe(
+            EventType.GUARDRAIL_TRIGGERED,
+            task_id=request.task_id,
+            agent_id=request.agent_id,
+            guardrail="prompt_injection",
+            action="warned",
+            reason=f"{tool}: {signals}"[:300],
+        )
+
     async def _run_crew(self, request: CrewRequest, prompt: str, hub: TelemetryHub) -> str:
         settings = self.services.settings
         worktree = _checked_worktree(Path(request.worktree), settings.data_dir)
@@ -222,6 +239,7 @@ class CrewExecutor(AgentExecutor):
             )
 
             def listener(name: str, args: dict[str, Any], ok: bool, text: str) -> None:
+                self._note_injection(hub, request, name, text)
                 hub.record_threadsafe(
                     EventType.TOOL_CALLED,
                     task_id=request.task_id,
@@ -315,6 +333,13 @@ def _write_only_for(request: CrewRequest) -> tuple[str, ...]:
     if isinstance(request, PersonaRequest) and request.mode == "acceptance":
         return (ACCEPTANCE_DIR,)
     return ()
+
+
+def _marked_source(text: str) -> str | None:
+    """If a tool's result was labelled by the injection guardrail, why (else None). The label may
+    sit after the plugin wrapper line, so the start of the text is searched."""
+    index = text[:400].find(MARK)
+    return signals_of(text[index:]) if index >= 0 else None
 
 
 def _with_owner(plugin_id: str | None, summary: str) -> str:

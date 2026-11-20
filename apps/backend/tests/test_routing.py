@@ -132,8 +132,7 @@ class World:
             return list(await session.scalars(select(LLMCall).order_by(LLMCall.created_at)))
 
 
-@pytest.fixture
-def world(app: FastAPI) -> World:
+def make_world(app: FastAPI) -> World:
     provider, clock = Provider(), Clock()
 
     async def no_sleep(_: float) -> None:
@@ -149,6 +148,11 @@ def world(app: FastAPI) -> World:
         clock=clock,
     )
     return World(app, provider, clock)
+
+
+@pytest.fixture
+def world(app: FastAPI) -> World:
+    return make_world(app)
 
 
 OPENAI = "https://api.openai.com/v1"

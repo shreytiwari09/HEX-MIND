@@ -29,6 +29,7 @@ from app.agents.persona import all_personas, get_persona
 from app.config import Settings
 from app.db.models import Mission, Project, Run, ScopingSession
 from app.events.log import EventType, append_event
+from app.guardrails.injection import mark
 from app.missions import service
 from app.missions.models import MissionPlan
 from app.orchestration.adk import model_error_fallback, run_adk, schema_guard
@@ -99,7 +100,9 @@ def project_context(workspace: Path) -> str:
     for name in ("README.md", "readme.md", "README"):
         readme = workspace / name
         if readme.is_file() and not readme.is_symlink():
-            text = readme.read_text(encoding="utf-8", errors="replace")[:README_CHARS]
+            text = mark(
+                readme.read_text(encoding="utf-8", errors="replace")[:README_CHARS], f"file {name}"
+            )
             lines += ["", f"{name} (start):", text]
             break
     contract = workspace / CONTRACT_PATH

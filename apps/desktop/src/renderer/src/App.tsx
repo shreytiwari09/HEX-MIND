@@ -36,6 +36,7 @@ import { NewPlugin } from './features/plugins/NewPlugin'
 import { PluginList } from './features/plugins/PluginList'
 import { PluginPanel } from './features/plugins/PluginPanel'
 import { usePlugins } from './features/plugins/usePlugins'
+import { PrivacyPanel } from './features/settings/PrivacyPanel'
 import { ProvidersPanel } from './features/settings/ProvidersPanel'
 import { DiffView } from './features/runs/DiffView'
 import { RunEventsPanel } from './features/runs/RunEventsPanel'
@@ -335,6 +336,8 @@ export function App() {
           ) : (
             <EmptyState title="Pick a team member to edit, or add a new one" />
           )
+        ) : view === 'settings' && project ? (
+          <PrivacyPanel key={project.id} api={api} projectId={project.id} projectName={project.name} />
         ) : view === 'plugins' ? (
           creatingPlugin ? (
             <NewPlugin

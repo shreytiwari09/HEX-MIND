@@ -9,6 +9,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
+from app.guardrails.injection import mark
 from app.mcp_server.tools import ToolError, WorkspaceTools
 from app.skills.registry import SkillRegistry
 
@@ -35,7 +36,10 @@ def build_server(tools: WorkspaceTools) -> FastMCP:
     @server.tool()
     def read_file(path: str) -> str:
         """Read a UTF-8 text file from the workspace."""
-        return guarded(tools.read_file)(path)
+        text = guarded(tools.read_file)(path)
+        # File contents are untrusted input; a suspicious file is labelled as data (the file
+        # itself is never changed, and replace_in_file does not go through here).
+        return text if text.startswith("ERROR:") else mark(text, f"file '{path}'")
 
     @server.tool()
     def search_code(query: str) -> str:

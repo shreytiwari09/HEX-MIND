@@ -30,6 +30,7 @@ from app.providers.base import (
     ProviderError,
     ProviderHealth,
 )
+from app.providers.privacy import privacy_for
 from app.providers.routing import Route
 
 if TYPE_CHECKING:
@@ -158,7 +159,10 @@ class ProviderRouter:
         ctx = ctx or CallContext()
         if ctx.route is not None and self.executor is not None and provider is None:
             return await self.executor.complete(self, request, ctx)
+        privacy = await privacy_for(self._sessionmaker, ctx.run_id)
         if provider is not None:
+            if not privacy.allows_legacy(provider):
+                return await self._refused(request, ctx, f"{provider}: {privacy.why_blocked()}")
             return (await self._attempt(self._adapters[provider], request, ctx, None)).result
 
         chain = self.candidates(ctx.complexity)
@@ -168,6 +172,9 @@ class ProviderRouter:
         skipped: list[str] = []
 
         for adapter in chain:
+            if not privacy.allows_legacy(adapter.name):
+                skipped.append(f"{adapter.name}: {privacy.why_blocked()}")
+                continue
             reason = await self._ineligible_reason(adapter)
             if reason is not None:
                 skipped.append(f"{adapter.name}: {reason}")
@@ -203,6 +210,22 @@ class ProviderRouter:
             est_cost_usd=None,
             attempts=0,
             error=error,
+        )
+        await self._log(request, result, ctx)
+        return result
+
+    async def _refused(self, request: LLMRequest, ctx: CallContext, why: str) -> LLMResult:
+        """A call that was not made because of the project's privacy mode, logged as such."""
+        result = LLMResult(
+            provider="none",
+            model="none",
+            content=None,
+            input_tokens=None,
+            output_tokens=None,
+            latency_ms=0,
+            est_cost_usd=None,
+            attempts=0,
+            error=f"not sent: {why}",
         )
         await self._log(request, result, ctx)
         return result

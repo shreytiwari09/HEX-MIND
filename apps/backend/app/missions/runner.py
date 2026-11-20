@@ -71,6 +71,7 @@ from app.orchestration.services import Services
 from app.plugins import registry as plugin_registry
 from app.plugins.config import PluginSpec, config_hash
 from app.providers.assignments import has_escalation, route_for
+from app.providers.privacy import privacy_for
 from app.sandbox.contract import ContractError
 from app.sandbox.profile import ProfileError, load_profile
 from app.sandbox.runner import CheckOutcome, accepted, check_feedback
@@ -342,6 +343,9 @@ class MissionRunner:
         # risky) are sent; the crew service starts nothing else.
         async with self.services.sessionmaker() as session:
             ready = await plugin_registry.ready_for(session, persona.plugins)
+        privacy = await privacy_for(self.services.sessionmaker, self.run_id)
+        if privacy.mode == "local":  # nothing leaves the machine: no plugin with network access
+            ready = [r for r in ready if plugin_registry.config_of(r).network == "none"]
         plugins = [
             PluginSpec(
                 id=row.id,

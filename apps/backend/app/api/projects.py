@@ -1,9 +1,11 @@
 import uuid
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from app.api.deps import SessionDep, SettingsDep
@@ -15,7 +17,8 @@ from app.api.schemas import (
     ProjectOut,
     TreeEntryOut,
 )
-from app.db.models import Project
+from app.db.models import Connection, Project
+from app.providers.presets import preset_for
 from app.workspace import files, git
 from app.workspace.paths import PathViolation
 
@@ -153,3 +156,59 @@ async def write_file(
             content={"detail": "file changed on disk", "current_hash": exc.current_hash},
         )
     return FileWritten(path=body.path, hash=new_hash)
+
+
+class PrivacyConnection(BaseModel):
+    id: uuid.UUID
+    name: str
+    local: bool  # runs on this machine: always allowed
+
+
+class PrivacyOut(BaseModel):
+    mode: Literal["any", "trusted", "local"]
+    trusted_connections: list[uuid.UUID]
+    connections: list[PrivacyConnection]
+
+
+class PrivacyIn(BaseModel):
+    mode: Literal["any", "trusted", "local"]
+    trusted_connections: list[uuid.UUID] = Field(default_factory=list, max_length=50)
+
+
+async def _privacy_out(session: SessionDep, project: Project) -> PrivacyOut:
+    connections = list(await session.scalars(select(Connection).order_by(Connection.name)))
+    return PrivacyOut(
+        mode=project.privacy_mode,  # type: ignore[arg-type]
+        trusted_connections=[uuid.UUID(str(c)) for c in project.trusted_connections or []],
+        connections=[
+            PrivacyConnection(id=c.id, name=c.name, local=preset_for(c.provider_type).local)
+            for c in connections
+        ],
+    )
+
+
+@router.get("/{project_id}/privacy", response_model=PrivacyOut)
+async def get_privacy(project_id: uuid.UUID, session: SessionDep) -> PrivacyOut:
+    """Which providers may see this project's prompts (PRD §13.5)."""
+    project = await session.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "project not found")
+    return await _privacy_out(session, project)
+
+
+@router.put("/{project_id}/privacy", response_model=PrivacyOut)
+async def set_privacy(project_id: uuid.UUID, body: PrivacyIn, session: SessionDep) -> PrivacyOut:
+    project = await session.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "project not found")
+    known = set(await session.scalars(select(Connection.id)))
+    unknown = [str(c) for c in body.trusted_connections if c not in known]
+    if unknown:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, f"no such connection: {', '.join(unknown)}"
+        )
+    project.privacy_mode = body.mode
+    # The list only matters for "trusted"; it is kept as given so switching modes loses nothing.
+    project.trusted_connections = [str(c) for c in dict.fromkeys(body.trusted_connections)]
+    await session.flush()
+    return await _privacy_out(session, project)
