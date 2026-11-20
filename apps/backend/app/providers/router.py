@@ -11,6 +11,7 @@ Policy (deterministic, configurable; never "provider X is always best"):
 """
 
 import asyncio
+import hashlib
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -35,6 +36,21 @@ from app.providers.routing import Route
 
 if TYPE_CHECKING:
     from app.providers.routed import RouteExecutor
+
+
+def digests(request: LLMRequest, completion: "Completion | None") -> tuple[str, str | None]:
+    """sha256 of exactly what was sent and of what came back, for the audit trail (PRD §14.2):
+    they prove what a call was without keeping the text."""
+    sent = request.model_dump_json(exclude_none=True)
+    got = (
+        completion.model_dump_json(exclude={"input_tokens", "output_tokens", "est_cost_usd"})
+        if completion is not None
+        else None
+    )
+    return (
+        hashlib.sha256(sent.encode()).hexdigest(),
+        hashlib.sha256(got.encode()).hexdigest() if got is not None else None,
+    )
 
 
 @dataclass(frozen=True)
@@ -282,7 +298,8 @@ class ProviderRouter:
             connection_id=getattr(adapter, "connection_id", None),
             key_label=getattr(adapter, "key_label", None),
         )
-        await self._log(request, result, ctx)
+        request_sha, response_sha = digests(request, completion)
+        await self._log(request, result, ctx, request_sha, response_sha)
         await self._emit(
             ctx,
             EventType.LLM_CALL_COMPLETED,
@@ -295,6 +312,8 @@ class ProviderRouter:
                 "output_tokens": result.output_tokens,
                 "attempts": result.attempts,
                 "error": result.error,
+                "request_sha256": request_sha,
+                "response_sha256": response_sha,
             },
         )
         return _Attempt(
@@ -303,7 +322,14 @@ class ProviderRouter:
             error.retry_after if error else None,
         )
 
-    async def _log(self, request: LLMRequest, result: LLMResult, ctx: CallContext) -> None:
+    async def _log(
+        self,
+        request: LLMRequest,
+        result: LLMResult,
+        ctx: CallContext,
+        request_sha256: str | None = None,
+        response_sha256: str | None = None,
+    ) -> None:
         # Own session: the call is recorded even if the caller's transaction later fails.
         async with self._sessionmaker.begin() as session:
             session.add(
@@ -324,6 +350,8 @@ class ProviderRouter:
                     key_label=result.key_label,
                     persona_id=ctx.persona_id,
                     variant_id=ctx.variant_id,
+                    request_sha256=request_sha256,
+                    response_sha256=response_sha256,
                 )
             )
 

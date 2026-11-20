@@ -11,7 +11,8 @@ P2/P4. v3 (P2) gives a2a_message the fields both ends of an A2A exchange record.
 the mission events (mission, milestone and feature status, handoffs, checkpoints, Needs you)
 that the Mission Control stream carries. v5 (P4) adds key_rotated, a pool key swapped after a
 rate limit, quota or auth error. v6 (P4) adds budget_warning and escalated. v7 (P5) adds
-validator_started and validator_reported. Any change needs agreement from all owners and bumps
+validator_started and validator_reported. v8 (P7) adds the request and response hashes to
+llm_call_completed (the audit trail). Any change needs agreement from all owners and bumps
 SCHEMA_VERSION.
 
 Payloads carry `stub: true` when the work they describe was not really performed (M2 worker
@@ -23,7 +24,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 Complexity = Literal["low", "medium", "high"]
 Framework = Literal["adk", "crewai"]
@@ -139,6 +140,10 @@ class LLMCallCompleted(Payload):
     output_tokens: int | None
     attempts: int
     error: str | None
+    # sha256 of exactly what was sent and what came back (audit trail); None for a failed call
+    # that returned nothing.
+    request_sha256: str | None = None
+    response_sha256: str | None = None
 
 
 class ProviderFallback(Payload):

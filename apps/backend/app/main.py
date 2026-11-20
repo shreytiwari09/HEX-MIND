@@ -13,6 +13,7 @@ from app.agents import store as persona_store
 from app.api import (
     a2a,
     assignments,
+    audit,
     budgets,
     catalog,
     connections,
@@ -38,6 +39,7 @@ from app.context.manager import ContextManager
 from app.db.session import create_engine, create_sessionmaker
 from app.events.hub import EventHub
 from app.memory.store import Memory, OllamaEmbedding
+from app.missions.recovery import pause_interrupted_missions
 from app.orchestration.background import BackgroundTasks
 from app.orchestration.services import Services
 from app.providers.factory import build_providers
@@ -76,6 +78,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         async with sessionmaker() as session:
             await persona_store.refresh(session)  # the user's edited and custom personas
+        await pause_interrupted_missions(services)  # a mission cannot run without its runner
         if settings.catalog_auto_refresh:
             services.background.spawn(model_catalog.refresh_if_stale(), name="catalog-refresh")
         if settings.crew_service_autostart:
@@ -130,6 +133,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         skills,
         plugins,
         variants,
+        audit,
     ):
         app.include_router(module.router, prefix="/api", dependencies=[Depends(require_token)])
     app.include_router(missions.needs_router, prefix="/api", dependencies=[Depends(require_token)])

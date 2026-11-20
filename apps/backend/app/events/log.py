@@ -6,12 +6,14 @@ same run are serialized and a rolled-back event does not consume a number.
 """
 
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AgentEvent, Run
+from app.events.chain import genesis, link, record_of
 from app.events.schema import PAYLOADS, EventType
 
 __all__ = ["NOTIFY_CHANNEL", "EventType", "append_event", "list_events"]
@@ -38,6 +40,20 @@ async def append_event(
             .returning(Run.last_event_seq)
         )
     ).scalar_one()
+    # Chain it to the event before (the run row is locked, so no one else is appending).
+    previous = (
+        genesis(run_id)
+        if seq == 1
+        else (
+            await session.scalar(
+                select(AgentEvent.hash).where(
+                    AgentEvent.run_id == run_id, AgentEvent.seq == seq - 1
+                )
+            )
+        )
+        or ""
+    )
+    now = datetime.now(UTC)
     event = AgentEvent(
         run_id=run_id,
         seq=seq,
@@ -45,6 +61,20 @@ async def append_event(
         agent_id=agent_id,
         task_id=task_id,
         payload=validated,
+        ts=now,
+        prev_hash=previous,
+        hash=link(
+            previous,
+            record_of(
+                run_id=run_id,
+                seq=seq,
+                type=type.value,
+                agent_id=agent_id,
+                task_id=task_id,
+                payload=validated,
+                ts=now,
+            ),
+        ),
     )
     session.add(event)
     await session.flush()

@@ -239,6 +239,10 @@ class AgentEvent(Base):
     task_id: Mapped[uuid.UUID | None] = _fk("tasks.id", nullable=True, ondelete="SET NULL")
     payload: Mapped[dict[str, Any]] = mapped_column(default=dict)
     ts: Mapped[datetime] = _created_at()
+    # The audit chain (events/chain.py): hash = sha256(prev_hash + canonical(record)). Null for
+    # events written before the chain existed.
+    prev_hash: Mapped[str | None] = mapped_column(String(64))
+    hash: Mapped[str | None] = mapped_column(String(64))
 
 
 class LLMCall(Base):
@@ -259,6 +263,10 @@ class LLMCall(Base):
     persona_id: Mapped[str | None] = mapped_column(String(32), index=True)
     # The prompt variant the call ran under (PRD §11.5, E5), for comparing configurations.
     variant_id: Mapped[str | None] = mapped_column(String(32), index=True)
+    # sha256 of exactly what was sent and what came back (the audit trail, PRD §14.2): proves
+    # what a call was without keeping the text.
+    request_sha256: Mapped[str | None] = mapped_column(String(64))
+    response_sha256: Mapped[str | None] = mapped_column(String(64))
     input_tokens: Mapped[int | None] = mapped_column(Integer)
     output_tokens: Mapped[int | None] = mapped_column(Integer)
     latency_ms: Mapped[int] = mapped_column(Integer)

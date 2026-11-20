@@ -6,12 +6,13 @@ import { useRunEvents } from '../runs/useRunEvents'
 import { useRunTasks } from '../runs/useRunTasks'
 import { A2AExplorer } from './A2AExplorer'
 import { AgentGrid } from './AgentGrid'
+import { AuditPanel } from './AuditPanel'
 import { BlackboardBoard } from './BlackboardBoard'
 import { CallbackStream } from './CallbackStream'
 import { PatternTopology } from './PatternTopology'
 import { SchemaChecks } from './SchemaChecks'
 
-const TABS = ['Blackboard', 'Agents', 'Callbacks', 'Schema checks', 'A2A', 'Topology'] as const
+const TABS = ['Blackboard', 'Agents', 'Callbacks', 'Schema checks', 'A2A', 'Topology', 'Audit'] as const
 type Tab = (typeof TABS)[number]
 
 interface Props {
@@ -66,6 +67,8 @@ export function ObservabilityView({ api, runId }: Props) {
           <SchemaChecks events={events} />
         ) : tab === 'A2A' ? (
           <A2AExplorer api={api} events={events} tasks={tasks} />
+        ) : tab === 'Audit' ? (
+          <AuditPanel api={api} runId={runId} />
         ) : (
           <PatternTopology events={events} />
         )}
