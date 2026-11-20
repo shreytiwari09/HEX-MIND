@@ -10,6 +10,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
@@ -368,6 +369,26 @@ class PluginRow(Base):
     approved_labels: Mapped[list[Any]] = mapped_column(default=list)
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
+
+
+class TraceSpan(Base):
+    """A finished OpenTelemetry span, kept so traces render offline (telemetry/span_store.py).
+    Attributes are sanitised before they are stored: no prompts, responses or secrets."""
+
+    __tablename__ = "trace_spans"
+
+    trace_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    span_id: Mapped[str] = mapped_column(String(16), primary_key=True)
+    parent_span_id: Mapped[str | None] = mapped_column(String(16))
+    name: Mapped[str] = mapped_column(String(200))
+    start_ns: Mapped[int] = mapped_column(BigInteger)
+    end_ns: Mapped[int] = mapped_column(BigInteger)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(8), default="unset")
+    status_message: Mapped[str | None] = mapped_column(Text)
+    attributes: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    # Set on the spans the hub touches; the rest of a trace is found through its trace id.
+    run_id: Mapped[uuid.UUID | None] = mapped_column(index=True)
 
 
 class PromptVariantRow(Base):

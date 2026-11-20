@@ -630,3 +630,136 @@
 .audit code {
   overflow-wrap: anywhere;
 }
+
+/* ---------- Trace ---------- */
+
+.trace {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.trace__header,
+.trace__kinds {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.trace__kind {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+}
+
+.trace__rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trace__row {
+  border-bottom: 1px solid var(--border);
+}
+
+.trace__line {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) 72px minmax(160px, 2fr);
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.trace__line:hover {
+  background: var(--surface-2);
+}
+
+.trace__line:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.trace__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trace__kind-tag {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+}
+
+.trace__duration {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+.trace__track {
+  position: relative;
+  height: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+}
+
+.trace__bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: var(--radius-sm);
+  background: var(--info);
+}
+
+.trace__row[data-kind='model'] .trace__bar {
+  background: var(--accent);
+}
+
+.trace__row[data-kind='tool'] .trace__bar {
+  background: var(--success);
+}
+
+.trace__row[data-kind='a2a'] .trace__bar,
+.trace__row[data-kind='crew'] .trace__bar {
+  background: var(--warning);
+}
+
+.trace__row[data-status='error'] .trace__bar {
+  background: var(--danger);
+}
+
+.trace__details {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface-1);
+  font-size: var(--text-sm);
+}
+
+.trace__details dt {
+  color: var(--text-muted);
+}
+
+.trace__details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.trace__attribute {
+  display: contents;
+}

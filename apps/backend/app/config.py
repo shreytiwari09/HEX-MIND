@@ -95,6 +95,8 @@ class Settings(BaseSettings):
 
     # OpenTelemetry: OTLP/HTTP traces endpoint, e.g. http://127.0.0.1:4318/v1/traces.
     otlp_endpoint: str | None = None
+    # Keep finished spans in Postgres so traces render offline (sanitised: no prompts or secrets).
+    store_traces: bool = True
 
     # RAG store (ChromaDB). Embeddings come from the local Ollama.
     memory_enabled: bool = True

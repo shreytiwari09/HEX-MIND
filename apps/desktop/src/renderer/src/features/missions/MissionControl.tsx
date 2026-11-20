@@ -7,6 +7,7 @@ import { describeError, postAction, type MissionAction } from './actions'
 import { ApplyPanel } from './ApplyPanel'
 import { Checkpoints } from './Checkpoints'
 import { CostsPanel } from './CostsPanel'
+import { ProvenancePanel } from './ProvenancePanel'
 import { ValidationPanel } from './ValidationPanel'
 import { FeatureTree } from './FeatureTree'
 import { NeedsYou } from './NeedsYou'
@@ -214,6 +215,14 @@ export function MissionScreen({
               api={api}
               missionId={mission.id}
               refreshKey={`${mission.status}:${mission.spent_usd}:${mission.tokens_in}:${events.filter(isDelegationEvent).length}`}
+            />
+          </section>
+          <section aria-label="Provenance">
+            <h3 className="mission__section-title">Where the changes came from</h3>
+            <ProvenancePanel
+              api={api}
+              missionId={mission.id}
+              refreshKey={`${mission.status}:${events.filter((e) => e.type === 'handoff_recorded').length}`}
             />
           </section>
           <section aria-label="Checkpoints">

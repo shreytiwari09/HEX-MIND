@@ -23,12 +23,14 @@ from app.api import (
     personas,
     plugins,
     projects,
+    provenance,
     providers,
     runs,
     scoping,
     skills,
     stream,
     tasks,
+    traces,
     variants,
 )
 from app.auth import require_token
@@ -134,6 +136,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         plugins,
         variants,
         audit,
+        traces,
+        provenance,
     ):
         app.include_router(module.router, prefix="/api", dependencies=[Depends(require_token)])
     app.include_router(missions.needs_router, prefix="/api", dependencies=[Depends(require_token)])

@@ -1,8 +1,9 @@
 """OpenTelemetry setup. ADK creates its own spans (agent, model and tool calls) on the global
 tracer provider; the TelemetryHub adds our attributes to them and opens spans for CrewAI crews.
 
-P1 exports only when `HEXMIND_OTLP_ENDPOINT` is set (e.g. a local collector). P5 adds the
-collector + Jaeger to Docker Compose and the `trace_spans` table.
+Spans are exported to a collector when `HEXMIND_OTLP_ENDPOINT` is set (e.g. the Jaeger in
+docker-compose.yml: `docker compose --profile observability up -d`), and always kept in Postgres
+(`trace_spans`, telemetry/span_store.py) so the app can show traces with no collector at all.
 """
 
 from opentelemetry import trace
@@ -25,6 +26,10 @@ def setup_tracing(settings: Settings) -> TracerProvider:
         else:
             _provider = TracerProvider(resource=Resource.create({"service.name": "hexmind"}))
             trace.set_tracer_provider(_provider)
+        if settings.store_traces:
+            from app.telemetry.span_store import PostgresSpanProcessor
+
+            add_span_processor(PostgresSpanProcessor(settings.database_url))
         if settings.otlp_endpoint:
             from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
