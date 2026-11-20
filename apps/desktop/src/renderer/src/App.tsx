@@ -1,5 +1,6 @@
 import {
   Activity,
+  BarChart3,
   Bot,
   BookOpen,
   Files,
@@ -33,6 +34,9 @@ import { NewPersona } from './features/agents/NewPersona'
 import { PersonaEditor } from './features/agents/PersonaEditor'
 import { PersonaList } from './features/agents/PersonaList'
 import { useTeam } from './features/agents/useTeam'
+import { MetricsScope, MetricsView } from './features/metrics/MetricsView'
+import { NotificationsPanel } from './features/notifications/NotificationsPanel'
+import { notificationsEnabled, useMissionNotifications } from './features/notifications/useMissionNotifications'
 import { NewPlugin } from './features/plugins/NewPlugin'
 import { AddFromGithub } from './features/skills/AddFromGithub'
 import { SkillList } from './features/skills/SkillList'
@@ -50,7 +54,7 @@ import { useWorkspace } from './features/workspace/useWorkspace'
 import { useBackendHealth } from './hooks/useBackendHealth'
 import { useBackend } from './lib/backend'
 
-type View = 'explorer' | 'missions' | 'models' | 'observability' | 'agents' | 'skills' | 'plugins' | 'runs' | 'settings'
+type View = 'explorer' | 'missions' | 'models' | 'observability' | 'agents' | 'skills' | 'plugins' | 'metrics' | 'runs' | 'settings'
 
 const VIEWS: { id: View; label: string; icon: LucideIcon }[] = [
   { id: 'explorer', label: 'Explorer', icon: Files },
@@ -60,6 +64,7 @@ const VIEWS: { id: View; label: string; icon: LucideIcon }[] = [
   { id: 'agents', label: 'Agents', icon: Bot },
   { id: 'skills', label: 'Skills', icon: BookOpen },
   { id: 'plugins', label: 'Plugins', icon: Plug },
+  { id: 'metrics', label: 'Metrics', icon: BarChart3 },
   { id: 'runs', label: 'Runs', icon: History },
   { id: 'settings', label: 'Settings', icon: Settings }
 ]
@@ -67,7 +72,7 @@ const VIEWS: { id: View; label: string; icon: LucideIcon }[] = [
 const BOTTOM_TABS = ['Problems', 'Tasks', 'Agent Events', 'Logs'] as const
 type BottomTab = (typeof BOTTOM_TABS)[number]
 
-const SIDEBAR_EMPTY: Record<Exclude<View, 'explorer' | 'missions' | 'models' | 'observability' | 'agents' | 'skills' | 'plugins' | 'runs'>, string> = {
+const SIDEBAR_EMPTY: Record<Exclude<View, 'explorer' | 'missions' | 'models' | 'observability' | 'agents' | 'skills' | 'plugins' | 'metrics' | 'runs'>, string> = {
   settings: ''
 }
 
@@ -94,6 +99,19 @@ export function App() {
   const [creatingPlugin, setCreatingPlugin] = useState(false)
   const [selectedSkill, setSelectedSkill] = useState<string | null>(null)
   const [addingSkill, setAddingSkill] = useState(false)
+  const [metricsMission, setMetricsMission] = useState<string | null>(null)
+  const [notify, setNotify] = useState(notificationsEnabled)
+  useMissionNotifications({
+    api,
+    projectId: project?.id ?? null,
+    enabled: notify,
+    viewingMissionId: view === 'missions' ? selectedMissionId : null,
+    onOpen: (id) => {
+      setView('missions')
+      setCreatingMission(false)
+      setSelectedMissionId(id)
+    }
+  })
   const [selectedPersonaId, setSelectedPersonaId] = useState<string | null>(null)
   const [creatingPersona, setCreatingPersona] = useState(false)
   const [missionsRefresh, setMissionsRefresh] = useState(0)
@@ -280,6 +298,8 @@ export function App() {
                 }}
                 onAdd={() => setAddingSkill(true)}
               />
+            ) : view === 'metrics' ? (
+              <MetricsScope api={api} projectId={project?.id ?? null} selected={metricsMission} onSelect={setMetricsMission} />
             ) : view === 'plugins' ? (
               <PluginList
                 data={pluginsData}
@@ -354,7 +374,10 @@ export function App() {
             <EmptyState title="Pick a team member to edit, or add a new one" />
           )
         ) : view === 'settings' && project ? (
-          <PrivacyPanel key={project.id} api={api} projectId={project.id} projectName={project.name} />
+          <div className="settings">
+            <PrivacyPanel key={project.id} api={api} projectId={project.id} projectName={project.name} />
+            <NotificationsPanel onChange={setNotify} />
+          </div>
         ) : view === 'skills' ? (
           addingSkill ? (
             <AddFromGithub
@@ -370,6 +393,12 @@ export function App() {
             <SkillPanel key={selectedSkill} api={api} team={team} name={selectedSkill} onRemoved={() => setSelectedSkill(null)} />
           ) : (
             <EmptyState title="Pick a skill, or add one from GitHub" />
+          )
+        ) : view === 'metrics' ? (
+          project ? (
+            <MetricsView key={`${project.id}:${metricsMission}`} api={api} projectId={project.id} missionId={metricsMission} />
+          ) : (
+            <EmptyState title="Open a workspace to see its metrics" />
           )
         ) : view === 'plugins' ? (
           creatingPlugin ? (
