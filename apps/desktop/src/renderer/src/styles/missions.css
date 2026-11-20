@@ -655,3 +655,48 @@
   padding-left: var(--space-4);
   font-size: var(--text-sm);
 }
+
+/* ---------- Plugins ---------- */
+
+.plugin__labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plugin__label {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  font-size: var(--text-sm);
+}
+
+.plugin__config {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.plugin__config dt {
+  color: var(--text-muted);
+}
+
+.plugin__config dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.plugin__approval {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-md);
+}

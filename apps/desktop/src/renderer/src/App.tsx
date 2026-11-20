@@ -7,6 +7,7 @@ import {
   KeyRound,
   PanelBottom,
   PanelRight,
+  Plug,
   RefreshCw,
   Rocket,
   Settings,
@@ -31,6 +32,10 @@ import { NewPersona } from './features/agents/NewPersona'
 import { PersonaEditor } from './features/agents/PersonaEditor'
 import { PersonaList } from './features/agents/PersonaList'
 import { useTeam } from './features/agents/useTeam'
+import { NewPlugin } from './features/plugins/NewPlugin'
+import { PluginList } from './features/plugins/PluginList'
+import { PluginPanel } from './features/plugins/PluginPanel'
+import { usePlugins } from './features/plugins/usePlugins'
 import { ProvidersPanel } from './features/settings/ProvidersPanel'
 import { DiffView } from './features/runs/DiffView'
 import { RunEventsPanel } from './features/runs/RunEventsPanel'
@@ -40,7 +45,7 @@ import { useWorkspace } from './features/workspace/useWorkspace'
 import { useBackendHealth } from './hooks/useBackendHealth'
 import { useBackend } from './lib/backend'
 
-type View = 'explorer' | 'missions' | 'models' | 'observability' | 'agents' | 'runs' | 'settings'
+type View = 'explorer' | 'missions' | 'models' | 'observability' | 'agents' | 'plugins' | 'runs' | 'settings'
 
 const VIEWS: { id: View; label: string; icon: LucideIcon }[] = [
   { id: 'explorer', label: 'Explorer', icon: Files },
@@ -48,6 +53,7 @@ const VIEWS: { id: View; label: string; icon: LucideIcon }[] = [
   { id: 'models', label: 'Models & Keys', icon: KeyRound },
   { id: 'observability', label: 'Observability', icon: Activity },
   { id: 'agents', label: 'Agents', icon: Bot },
+  { id: 'plugins', label: 'Plugins', icon: Plug },
   { id: 'runs', label: 'Runs', icon: History },
   { id: 'settings', label: 'Settings', icon: Settings }
 ]
@@ -55,7 +61,7 @@ const VIEWS: { id: View; label: string; icon: LucideIcon }[] = [
 const BOTTOM_TABS = ['Problems', 'Tasks', 'Agent Events', 'Logs'] as const
 type BottomTab = (typeof BOTTOM_TABS)[number]
 
-const SIDEBAR_EMPTY: Record<Exclude<View, 'explorer' | 'missions' | 'models' | 'observability' | 'agents' | 'runs'>, string> = {
+const SIDEBAR_EMPTY: Record<Exclude<View, 'explorer' | 'missions' | 'models' | 'observability' | 'agents' | 'plugins' | 'runs'>, string> = {
   settings: ''
 }
 
@@ -77,6 +83,9 @@ export function App() {
   const [selectedMissionId, setSelectedMissionId] = useState<string | null>(null)
   const [creatingMission, setCreatingMission] = useState(false)
   const team = useTeam(api)
+  const pluginsData = usePlugins(api)
+  const [selectedPluginId, setSelectedPluginId] = useState<string | null>(null)
+  const [creatingPlugin, setCreatingPlugin] = useState(false)
   const [selectedPersonaId, setSelectedPersonaId] = useState<string | null>(null)
   const [creatingPersona, setCreatingPersona] = useState(false)
   const [missionsRefresh, setMissionsRefresh] = useState(0)
@@ -253,6 +262,16 @@ export function App() {
                 }}
                 onNew={() => setCreatingPersona(true)}
               />
+            ) : view === 'plugins' ? (
+              <PluginList
+                data={pluginsData}
+                selectedId={selectedPluginId}
+                onSelect={(id) => {
+                  setCreatingPlugin(false)
+                  setSelectedPluginId(id)
+                }}
+                onNew={() => setCreatingPlugin(true)}
+              />
             ) : view === 'observability' || view === 'runs' ? (
               <RunList
                 api={api}
@@ -315,6 +334,28 @@ export function App() {
             />
           ) : (
             <EmptyState title="Pick a team member to edit, or add a new one" />
+          )
+        ) : view === 'plugins' ? (
+          creatingPlugin ? (
+            <NewPlugin
+              api={api}
+              data={pluginsData}
+              onCancel={() => setCreatingPlugin(false)}
+              onCreated={(plugin) => {
+                setCreatingPlugin(false)
+                setSelectedPluginId(plugin.id)
+              }}
+            />
+          ) : pluginsData.plugins.find((p) => p.id === selectedPluginId) ? (
+            <PluginPanel
+              api={api}
+              data={pluginsData}
+              team={team}
+              plugin={pluginsData.plugins.find((p) => p.id === selectedPluginId)!}
+              onRemoved={() => setSelectedPluginId(null)}
+            />
+          ) : (
+            <EmptyState title="Pick a plugin, or add one" />
           )
         ) : view === 'observability' ? (
           <ObservabilityView api={api} runId={selectedRunId} />

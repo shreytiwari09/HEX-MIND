@@ -23,7 +23,7 @@ from app.agents.persona import (
     builtin_personas,
     set_overrides,
 )
-from app.db.models import FeatureRow, Mission, PersonaRow, PersonaVersion
+from app.db.models import FeatureRow, Mission, PersonaRow, PersonaVersion, PluginRow
 from app.skills.registry import SkillRegistry
 
 MAX_SKILLS = 12
@@ -81,6 +81,10 @@ def _to_persona(row: PersonaRow) -> Persona:
     )
 
 
+async def _plugin_ids(session: AsyncSession) -> set[str]:
+    return set(await session.scalars(select(PluginRow.id)))
+
+
 async def rows_by_id(session: AsyncSession) -> dict[str, PersonaRow]:
     return {row.id: row for row in await session.scalars(select(PersonaRow))}
 
@@ -90,7 +94,7 @@ async def refresh(session: AsyncSession) -> None:
     set_overrides({row.id: _to_persona(row) for row in (await rows_by_id(session)).values()})
 
 
-def _check(persona: Persona, registry: SkillRegistry) -> None:
+def _check(persona: Persona, registry: SkillRegistry, plugins: set[str]) -> None:
     if not 2 <= len(persona.name.strip()) <= 60:
         raise PersonaError("the name must be 2 to 60 characters")
     text = persona.instructions.strip()
@@ -103,8 +107,13 @@ def _check(persona: Persona, registry: SkillRegistry) -> None:
     _, missing = registry.resolve(persona.skills)
     if missing:
         raise PersonaError(f"no such skill: {', '.join(missing)}")
-    if persona.plugins:
-        raise PersonaError("plugins arrive with the plugin manager; leave this empty for now")
+    if len(set(persona.plugins)) != len(persona.plugins):
+        raise PersonaError("a plugin can be attached once")
+    if persona.plugins and persona.kind != "worker":
+        raise PersonaError("plugins can only be attached to builders (workers) for now")
+    unknown = [p for p in persona.plugins if p not in plugins]
+    if unknown:
+        raise PersonaError(f"no such plugin: {', '.join(unknown)}")
 
 
 async def _record(session: AsyncSession, persona: Persona) -> None:
@@ -145,7 +154,7 @@ async def edit(
     )
     if _snapshot(updated) == _snapshot(current):
         return current
-    _check(updated, registry)
+    _check(updated, registry, await _plugin_ids(session))
     await _record(session, current)  # the version being replaced is kept (a built-in's is v1)
     latest = await session.scalar(
         select(func.max(PersonaVersion.version)).where(PersonaVersion.persona_id == persona_id)
@@ -187,7 +196,7 @@ async def create(
         skills=skills,
         version=1,
     )
-    _check(persona, registry)
+    _check(persona, registry, await _plugin_ids(session))
     session.add(
         PersonaRow(
             id=persona_id,

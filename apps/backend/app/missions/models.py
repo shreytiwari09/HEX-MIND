@@ -76,6 +76,15 @@ class SkillUse(BaseModel):
     loaded: bool = False
 
 
+class PluginUse(BaseModel):
+    """A plugin that was ready for the persona on this job, the exact configuration it ran with
+    (hash), and whether the agent called any of its tools (measured from the tool-call log)."""
+
+    id: str
+    config_hash: str
+    called: bool = False
+
+
 class Handoff(AgentReport):
     feature_id: str
     persona_id: str
@@ -87,6 +96,7 @@ class Handoff(AgentReport):
     cost_usd: float = 0.0
     skills: list[SkillUse] = Field(default_factory=list)
     persona_version: int = 1  # the version of the persona that did the work
+    plugins: list[PluginUse] = Field(default_factory=list)
 
     @classmethod
     def assemble(
@@ -102,6 +112,7 @@ class Handoff(AgentReport):
         cost_usd: float,
         skills: list[SkillUse] | None = None,
         persona_version: int = 1,
+        plugins: list[PluginUse] | None = None,
     ) -> "Handoff":
         """Combine the agent's report with measured facts. The agent's own claims about files
         or commands are not part of `AgentReport`, so they cannot leak into the measured fields."""
@@ -117,6 +128,7 @@ class Handoff(AgentReport):
             cost_usd=cost_usd,
             skills=skills or [],
             persona_version=persona_version,
+            plugins=plugins or [],
         )
 
 

@@ -51,6 +51,56 @@ class CheckOutcome:
         return self.exit_code == 0
 
 
+def hardening_flags(*, memory: str, pids: str) -> list[str]:
+    """What every sandbox container gets, for checks and for plugins alike: resource limits, a
+    read-only root filesystem, no capabilities, no privilege escalation, a non-root user."""
+    return [
+        "--cpus", "1",
+        "--memory", memory,
+        "--pids-limit", pids,
+        "--read-only",
+        "--tmpfs", "/tmp:rw,size=256m",
+        "--cap-drop", "ALL",
+        "--security-opt", "no-new-privileges",
+        "--user", "1000:1000",
+        "--env", "HOME=/tmp",
+    ]  # fmt: skip
+
+
+def plugin_command(
+    *,
+    image: str,
+    command: str,
+    container_name: str,
+    worktree: Path | None,
+    writable: bool,
+    network: str = "none",
+    proxy: str | None = None,
+) -> list[str]:
+    """A plugin's MCP server as a stdio process in the sandbox: `docker run -i`, the same
+    hardening as a check, the worktree mounted only when the plugin was configured to see it
+    (read-only unless it may write), and no network except through the allowlist proxy."""
+    proxy_env = (
+        [f"--env={name}=http://{proxy}:{PROXY_PORT}" for name in _PROXY_ENV] if proxy else []
+    )
+    mount = (
+        ["--mount", f"type=bind,source={worktree.resolve()},target=/work"
+         + ("" if writable else ",readonly"), "--workdir", "/work"]
+        if worktree is not None
+        else ["--workdir", "/tmp"]
+    )  # fmt: skip
+    return [
+        "docker", "run", "-i", "--rm",
+        "--name", container_name,
+        "--network", network,
+        *hardening_flags(memory="512m", pids="128"),
+        *proxy_env,
+        *mount,
+        image,
+        "sh", "-c", command,
+    ]  # fmt: skip
+
+
 def docker_command(
     *,
     image: str,
@@ -69,15 +119,7 @@ def docker_command(
         "docker", "run", "--rm",
         "--name", container_name,
         "--network", network,
-        "--cpus", "1",
-        "--memory", "1g",
-        "--pids-limit", "256",
-        "--read-only",
-        "--tmpfs", "/tmp:rw,size=256m",
-        "--cap-drop", "ALL",
-        "--security-opt", "no-new-privileges",
-        "--user", "1000:1000",
-        "--env", "HOME=/tmp",
+        *hardening_flags(memory="1g", pids="256"),
         "--env", "CI=1",
         *proxy_env,
         "--mount", f"type=bind,source={worktree.resolve()},target=/work",

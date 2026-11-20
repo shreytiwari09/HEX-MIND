@@ -335,6 +335,25 @@ class Mission(Base):
     validation_contract: Mapped[list[Any]] = mapped_column(default=list)
 
 
+class PluginRow(Base):
+    """A plugin (an MCP server) the user added; see plugins/config.py for what the fields mean
+    and how permissions and approval follow from them."""
+
+    __tablename__ = "plugins"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    description: Mapped[str] = mapped_column(Text, default="")
+    config: Mapped[dict[str, Any]] = mapped_column()  # a PluginConfig
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # The configuration hash the user approved, with when and which labels they saw.
+    approved_hash: Mapped[str | None] = mapped_column(String(64))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approved_labels: Mapped[list[Any]] = mapped_column(default=list)
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
 class PersonaRow(Base):
     """A persona the user edited (a built-in one) or created. It overlays the built-in YAML
     persona with the same id; deleting the row resets a built-in persona to its default."""

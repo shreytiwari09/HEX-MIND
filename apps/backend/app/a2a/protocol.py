@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from app.agents.build import REPORT_EXPECTED
 from app.agents.persona import Persona
 from app.missions.models import Feature, Handoff
+from app.plugins.config import PluginSpec
 
 # `planner` and `coder` are the fixed crews of the run workflow. `persona` serves any persona
 # (PRD §12.3): the request names the persona and the feature, and the crew service builds the agent.
@@ -52,6 +53,9 @@ class PersonaRequest(CrewRequest):
     # The persona as the orchestrator has it now (the user may have edited it or made it): the
     # crew service has no database. Without it the built-in persona is used.
     persona: Persona | None = None
+    # The plugins that are ready for this persona now (enabled, and approved if risky), with
+    # their configuration: only these are ever started.
+    plugins: list[PluginSpec] = Field(default_factory=list)
     feature: Feature
     earlier_handoffs: list[Handoff] = Field(default_factory=list)
     # The exact findings of a rejected attempt, for the retry (PRD §8.6).

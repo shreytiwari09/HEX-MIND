@@ -23,6 +23,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import uuid
 from dataclasses import dataclass
 from decimal import Decimal
@@ -59,6 +60,7 @@ from app.missions.models import (
     Feature,
     Finding,
     Handoff,
+    PluginUse,
     SkillUse,
     ValidatorReport,
 )
@@ -66,6 +68,8 @@ from app.missions.validators import VALIDATORS, FeatureSnap, ValidationContext
 from app.orchestration.adk import run_adk
 from app.orchestration.run import NO_CHANGES_FEEDBACK, RunStep, _innermost, set_status
 from app.orchestration.services import Services
+from app.plugins import registry as plugin_registry
+from app.plugins.config import PluginSpec, config_hash
 from app.providers.assignments import has_escalation, route_for
 from app.sandbox.contract import ContractError
 from app.sandbox.profile import ProfileError, load_profile
@@ -110,6 +114,9 @@ def dependency_fingerprint(root: Path) -> str:
         if path.is_file() and not path.is_symlink():
             digest.update(name.encode() + b"\0" + path.read_bytes() + b"\0")
     return digest.hexdigest()
+
+
+_OWNER = re.compile(r"^\[([a-z0-9-]+)\] ")  # a plugin tool's call is logged as "[plugin-id] ..."
 
 
 def _check_ok(name: str, outcome: CheckOutcome) -> bool:
@@ -331,6 +338,19 @@ class MissionRunner:
 
         if number >= MAX_ATTEMPTS:
             await self._note_escalation(feature, number)
+        # Only plugins that are ready now (enabled; approved for their exact configuration if
+        # risky) are sent; the crew service starts nothing else.
+        async with self.services.sessionmaker() as session:
+            ready = await plugin_registry.ready_for(session, persona.plugins)
+        plugins = [
+            PluginSpec(
+                id=row.id,
+                name=row.name,
+                config=plugin_registry.config_of(row),
+                config_hash=config_hash(plugin_registry.config_of(row)),
+            )
+            for row in ready
+        ]
         request = PersonaRequest(
             exchange_id=uuid.uuid4(),
             run_id=self.run_id,
@@ -339,6 +359,7 @@ class MissionRunner:
             workspace=str(self.workspace),
             persona_id=feature.persona,
             persona=persona,
+            plugins=plugins,
             feature=feature,
             earlier_handoffs=earlier,
             feedback=feedback,
@@ -401,6 +422,7 @@ class MissionRunner:
             cost_usd=float(cost),
             skills=await self._skills_used(feature, request.agent_id, started),
             persona_version=persona.version,
+            plugins=await self._plugins_used(plugins, request.agent_id, started),
         )
         await self._checkpoint(key, handoff)
         return Attempt("accepted")
@@ -433,6 +455,34 @@ class MissionRunner:
             if p.get("tool") == "load_skill" and p.get("ok")
         }
         return [SkillUse(name=s.name, version=s.version, loaded=s.name in loaded) for s in offered]
+
+    async def _plugins_used(
+        self, plugins: list[PluginSpec], agent_id: str, since: object
+    ) -> list[PluginUse]:
+        """The plugins that were ready on this job and whether any of their tools was called,
+        read from the tool-call log (a plugin tool is named `<plugin>__<tool>`)."""
+        if not plugins:
+            return []
+        async with self.services.sessionmaker() as session:
+            payloads = list(
+                await session.scalars(
+                    select(AgentEvent.payload).where(
+                        AgentEvent.run_id == self.run_id,
+                        AgentEvent.type == EventType.TOOL_CALLED,
+                        AgentEvent.agent_id == agent_id,
+                        AgentEvent.ts >= since,
+                    )
+                )
+            )
+        called = {
+            match.group(1)
+            for p in payloads
+            if str(p.get("tool", "")).startswith("plugin_")
+            and (match := _OWNER.match(str(p.get("summary", ""))))
+        }
+        return [
+            PluginUse(id=p.id, config_hash=p.config_hash, called=p.id in called) for p in plugins
+        ]
 
     async def _note_escalation(self, feature: Feature, attempt: int) -> None:
         """Record in the delegation log that this attempt runs on the escalation model."""

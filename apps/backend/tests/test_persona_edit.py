@@ -88,7 +88,7 @@ async def test_a_bad_edit_is_refused_and_changes_nothing(
         ({"skills": ["ghost-skill"]}, "no such skill: ghost-skill"),
         ({"skills": ["rest-api", "rest-api"]}, "different skills"),
         ({"instructions": "too short"}, "instructions must be"),
-        ({"plugins": ["figma"]}, "plugin manager"),
+        ({"plugins": ["figma"]}, "no such plugin: figma"),
     ]
     for body, message in cases:
         response = await put(client, "backend", **body)

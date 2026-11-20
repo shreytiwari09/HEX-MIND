@@ -20,6 +20,7 @@ from app.api import (
     health,
     missions,
     personas,
+    plugins,
     projects,
     providers,
     runs,
@@ -126,6 +127,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         catalog,
         scoping,
         skills,
+        plugins,
     ):
         app.include_router(module.router, prefix="/api", dependencies=[Depends(require_token)])
     app.include_router(missions.needs_router, prefix="/api", dependencies=[Depends(require_token)])

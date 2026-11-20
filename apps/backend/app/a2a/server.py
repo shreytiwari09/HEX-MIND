@@ -23,6 +23,7 @@ from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
 from a2a.types import AgentCapabilities, AgentCard, AgentSkill, Part, TaskState, TextPart
 from a2a.utils import new_agent_text_message, new_task
+from crewai.tools import BaseTool
 from fastapi.concurrency import run_in_threadpool
 from opentelemetry import propagate, trace
 from starlette.applications import Starlette
@@ -50,6 +51,7 @@ from app.context.repo_map import build_repo_map
 from app.events.log import EventType
 from app.missions.models import AgentReport, MissionContext
 from app.orchestration.services import Services
+from app.plugins.runtime import PluginHost
 from app.providers.assignments import route_for
 from app.providers.router import CallContext
 from app.sandbox.contract import CONTRACT_PATH, DOCKERFILE_PATH
@@ -193,6 +195,7 @@ class CrewExecutor(AgentExecutor):
             skills_dir=registry.user_dir,
         )
         await run_in_threadpool(mcp.start)
+        plugin_host: PluginHost | None = None
         try:
             loop = asyncio.get_running_loop()
             persona = _persona_for(request) if isinstance(request, PersonaRequest) else None
@@ -225,7 +228,10 @@ class CrewExecutor(AgentExecutor):
                     agent_id=request.agent_id,
                     tool=name,
                     ok=ok,
-                    summary=tool_summary(name, args, text),
+                    summary=_with_owner(
+                        plugin_host.owner_of(name) if plugin_host else None,
+                        tool_summary(name, args, text),
+                    ),
                 )
 
             if persona is not None:
@@ -235,16 +241,26 @@ class CrewExecutor(AgentExecutor):
                     workspace=Path(request.workspace),
                     earlier_handoffs=request.earlier_handoffs,
                 )
+                # Plugins the orchestrator found ready for this persona. They run in the sandbox
+                # (or are reached over https), never on the host, and never for acceptance tests.
+                plugin_tools: list[BaseTool] = []
+                if request.plugins and request.mode == "feature":
+                    host = PluginHost(request.plugins, worktree=worktree, listener=listener)
+                    plugin_host = host
+                    plugin_tools = await run_in_threadpool(host.start)
                 agent = build_agent(
                     persona,
                     request.feature,
                     ctx,
                     llm=llm,
-                    tools=make_tools(
-                        mcp,
-                        tool_names_for(persona, acceptance=request.mode == "acceptance"),
-                        listener,
-                    ),
+                    tools=[
+                        *make_tools(
+                            mcp,
+                            tool_names_for(persona, acceptance=request.mode == "acceptance"),
+                            listener,
+                        ),
+                        *plugin_tools,
+                    ],
                     max_iter=settings.agent_max_iterations,
                 )
                 focus = [
@@ -258,6 +274,7 @@ class CrewExecutor(AgentExecutor):
                     request.feedback,
                     acceptance=request.mode == "acceptance",
                     skills=offered,
+                    plugin_tools=[t.name for t in plugin_tools],
                     repo_map=await run_in_threadpool(build_repo_map, ctx.worktree, focus),
                 )
             else:
@@ -280,6 +297,8 @@ class CrewExecutor(AgentExecutor):
             # orchestrator's escalation ladder can react.
             return roles.parse_json_output(raw, AgentReport).model_dump_json()
         finally:
+            if plugin_host is not None:
+                await run_in_threadpool(plugin_host.close)
             await run_in_threadpool(mcp.close)
 
 
@@ -296,6 +315,11 @@ def _write_only_for(request: CrewRequest) -> tuple[str, ...]:
     if isinstance(request, PersonaRequest) and request.mode == "acceptance":
         return (ACCEPTANCE_DIR,)
     return ()
+
+
+def _with_owner(plugin_id: str | None, summary: str) -> str:
+    """A plugin tool's call is logged as `[plugin-id] ...`, so the log says whose code ran."""
+    return f"[{plugin_id}] {summary}" if plugin_id else summary
 
 
 def _persona_for(request: PersonaRequest) -> Persona:
