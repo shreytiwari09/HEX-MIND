@@ -21,7 +21,8 @@ const LISTING: Listing = {
         { id: 'blackboard', label: 'Blackboard (default)' },
         { id: 'messaging', label: 'Messaging only' }
       ],
-      blocked: null
+      blocked: null,
+      note: 'Two of the six patterns are built.'
     },
     { id: 'E1', title: 'Patterns', question: 'Does the mission team beat a single agent?', varies: '', conditions: [], blocked: 'needs the other team patterns' }
   ]
@@ -119,6 +120,7 @@ describe('ExperimentsView', () => {
 
     expect(await screen.findByText(/Not runnable yet: needs the other team patterns/)).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: /^Run E/ })).toHaveLength(1) // only E4
+    expect(screen.getByText(/Two of the six patterns are built/)).toBeInTheDocument()
     expect(screen.getByText(/No trials have been run yet/)).toBeInTheDocument()
   })
 

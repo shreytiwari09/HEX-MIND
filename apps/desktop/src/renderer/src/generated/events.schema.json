@@ -1470,6 +1470,10 @@
         "purpose": {
           "type": "string"
         },
+        "replayed": {
+          "default": false,
+          "type": "boolean"
+        },
         "request_sha256": {
           "anyOf": [
             {
@@ -1504,7 +1508,8 @@
         "attempts",
         "error",
         "request_sha256",
-        "response_sha256"
+        "response_sha256",
+        "replayed"
       ],
       "title": "LLMCallCompleted",
       "type": "object"

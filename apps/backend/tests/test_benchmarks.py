@@ -12,8 +12,8 @@ from app.sandbox.runner import docker_available
 
 def test_task_set_shape() -> None:
     tasks = benchmarks.load_tasks()
-    assert len(tasks) >= 12  # plan: >= 12 tasks, 14 x 3 providers = 42 runs in M7
-    assert Counter(t.expected_complexity for t in tasks) == {"low": 5, "medium": 5, "high": 4}
+    assert len(tasks) >= 20  # PRD §15.1: 20 to 30 tasks
+    assert Counter(t.expected_complexity for t in tasks) == {"low": 7, "medium": 8, "high": 7}
     for task in tasks:
         assert task.acceptance_test.is_file(), task.slug
         assert any(task.reference_dir.rglob("*.js")), task.slug

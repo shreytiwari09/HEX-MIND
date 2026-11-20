@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
+from app.providers.cache import ResponseCache
 from app.providers.ollama import OllamaAdapter
 from app.providers.openai_compat import GEMINI_BASE_URL, GROQ_BASE_URL, OpenAICompatAdapter
 from app.providers.pricing import Pricing
@@ -59,6 +60,7 @@ def build_providers(
         order_by_complexity=settings.provider_order_by_complexity,
         quota_cooldown_s=settings.quota_cooldown_s,
     )
+    router.cache = ResponseCache(sessionmaker, settings.response_cache)
     if keystore is not None:
         executor = RouteExecutor(
             sessionmaker,

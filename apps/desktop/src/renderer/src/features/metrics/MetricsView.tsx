@@ -60,7 +60,7 @@ export function MetricsView({ api, projectId, missionId }: Props) {
       <div className="metrics__cards">
         <Card label="Missions" value={count(metrics.missions.count)} hint={`avg ${duration(metrics.missions.avg_duration_s)}`} />
         <Card label="Spent" value={usd(calls.cost_usd)} hint={calls.without_cost > 0 ? `${calls.without_cost} calls had no price` : undefined} />
-        <Card label="Model calls" value={count(calls.count)} hint={`${percent(calls.error_rate)} failed`} />
+        <Card label="Model calls" value={count(calls.count)} hint={`${percent(calls.error_rate)} failed${calls.replayed ? `, ${calls.replayed} replayed` : ''}`} />
         <Card label="Tokens" value={count(calls.input_tokens + calls.output_tokens)} hint={`${count(calls.input_tokens)} in · ${count(calls.output_tokens)} out`} />
         <Card
           label="Latency"

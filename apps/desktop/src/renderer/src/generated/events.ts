@@ -194,6 +194,7 @@ export interface LLMCallCompleted {
   output_tokens: number | null;
   provider: string;
   purpose: string;
+  replayed: boolean;
   request_sha256: string | null;
   response_sha256: string | null;
 }

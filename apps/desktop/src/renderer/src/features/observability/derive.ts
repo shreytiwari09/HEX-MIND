@@ -303,3 +303,53 @@ export function deriveA2AExchanges(events: AgentEvent[]): A2AExchange[] {
   }
   return [...byId.values()]
 }
+
+// ---------- message flow ----------
+
+export interface FlowMessage {
+  seq: number
+  ts: string
+  /** The lane the arrow starts in and the lane it ends in. */
+  from: string
+  to: string
+  exchangeId: string
+  taskId: string | null
+  /** request: the orchestrator sent work. resend: the same request sent again after no answer.
+   *  reply: the crew answered. timeout: no answer arrived in time (the work may still have run). */
+  kind: 'request' | 'resend' | 'reply' | 'timeout'
+  state: string | null
+  summary: string | null
+  durationMs: number | null
+}
+
+export interface MessageFlow {
+  lanes: string[]
+  messages: FlowMessage[]
+}
+
+const ORCHESTRATOR = 'orchestrator'
+
+/** The conversation between the orchestrator and the crews as a sequence of arrows, from what the
+ *  orchestrator recorded: each request, each reply, and each request sent again after a timeout
+ *  (same exchange id, so the crew service did the work once). */
+export function deriveMessageFlow(events: AgentEvent[]): MessageFlow {
+  const lanes = [ORCHESTRATOR]
+  const messages: FlowMessage[] = []
+  const sent = new Map<string, number>()
+  for (const e of ofType(events, 'a2a_message')) {
+    const p = e.payload
+    if (p.side !== 'client') continue
+    const crew = p.peer
+    if (!lanes.includes(crew)) lanes.push(crew)
+    const base = { seq: e.seq, ts: e.ts, exchangeId: p.exchange_id, taskId: e.task_id, state: p.task_state, summary: p.summary, durationMs: p.duration_ms ?? null }
+    if (p.direction === 'sent') {
+      const times = (sent.get(p.exchange_id) ?? 0) + 1
+      sent.set(p.exchange_id, times)
+      messages.push({ ...base, from: ORCHESTRATOR, to: crew, kind: times > 1 ? 'resend' : 'request' })
+    } else {
+      const lost = p.task_state === 'failed' && /did not answer|timed out|timeout/i.test(p.summary ?? '')
+      messages.push({ ...base, from: crew, to: ORCHESTRATOR, kind: lost ? 'timeout' : 'reply' })
+    }
+  }
+  return { lanes, messages }
+}

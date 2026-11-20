@@ -9,6 +9,8 @@ export interface ExperimentInfo {
   conditions: { id: string; label: string }[]
   /** Why it cannot run yet; null when it can. */
   blocked: string | null
+  /** What the comparison does and does not cover. */
+  note?: string | null
 }
 
 export interface Listing {

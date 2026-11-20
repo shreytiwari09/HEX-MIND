@@ -96,6 +96,10 @@ class Settings(BaseSettings):
     # same exchange id (the crew service answers a repeat from the work already done or in flight).
     messaging_resends: int = 2
 
+    # Response cache for replays (PRD §15.2): off, readwrite (use and fill), replay_only (never
+    # live).
+    response_cache: Literal["off", "readwrite", "replay_only"] = "off"
+
     # OpenTelemetry: OTLP/HTTP traces endpoint, e.g. http://127.0.0.1:4318/v1/traces.
     otlp_endpoint: str | None = None
     # Keep finished spans in Postgres so traces render offline (sanitised: no prompts or secrets).

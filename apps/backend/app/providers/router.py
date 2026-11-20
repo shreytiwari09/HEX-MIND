@@ -31,6 +31,7 @@ from app.providers.base import (
     ProviderError,
     ProviderHealth,
 )
+from app.providers.cache import ResponseCache, cache_key
 from app.providers.privacy import privacy_for
 from app.providers.routing import Route
 
@@ -111,6 +112,8 @@ class ProviderRouter:
         self._health_cache: dict[str, tuple[float, ProviderHealth]] = {}
         # Serves calls that carry a persona route (PRD §10.4); set by build_providers.
         self.executor: RouteExecutor | None = None
+        # Exact-match answers for replays (PRD §15.2); None or mode `off` does nothing.
+        self.cache: ResponseCache | None = None
 
     def adapter(self, name: str) -> ProviderAdapter:
         return self._adapters[name]
@@ -269,10 +272,24 @@ class ProviderRouter:
         error: ProviderError | None = None
         attempts = 0
         limit = max_attempts or self._max_attempts
+        replayed = False
+        key = None
+        if self.cache is not None and self.cache.active:
+            key = cache_key(adapter.name, adapter.model, request)
+            stored = await self.cache.get(key)
+            if stored is not None:
+                completion, replayed, attempts, limit = stored.completion, True, 1, 1
+                started = time.perf_counter() - stored.latency_ms / 1000  # the measured latency
+            elif self.cache.mode == "replay_only":
+                error = ProviderError("replay only: this call is not stored")
+                attempts, limit = 1, 1
         while attempts < limit:
             attempts += 1
             try:
                 completion = await adapter.complete(request)
+                if key is not None and self.cache is not None:
+                    elapsed = round((time.perf_counter() - started) * 1000)
+                    await self.cache.put(key, adapter.name, adapter.model, completion, elapsed)
                 break
             except ProviderError as exc:
                 error = exc
@@ -299,7 +316,7 @@ class ProviderRouter:
             key_label=getattr(adapter, "key_label", None),
         )
         request_sha, response_sha = digests(request, completion)
-        await self._log(request, result, ctx, request_sha, response_sha)
+        await self._log(request, result, ctx, request_sha, response_sha, replayed)
         await self._emit(
             ctx,
             EventType.LLM_CALL_COMPLETED,
@@ -314,6 +331,7 @@ class ProviderRouter:
                 "error": result.error,
                 "request_sha256": request_sha,
                 "response_sha256": response_sha,
+                "replayed": replayed,
             },
         )
         return _Attempt(
@@ -329,6 +347,7 @@ class ProviderRouter:
         ctx: CallContext,
         request_sha256: str | None = None,
         response_sha256: str | None = None,
+        replayed: bool = False,
     ) -> None:
         # Own session: the call is recorded even if the caller's transaction later fails.
         async with self._sessionmaker.begin() as session:
@@ -352,6 +371,7 @@ class ProviderRouter:
                     variant_id=ctx.variant_id,
                     request_sha256=request_sha256,
                     response_sha256=response_sha256,
+                    replayed=replayed,
                 )
             )
 

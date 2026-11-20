@@ -15,6 +15,7 @@ stopped by a rate limit continues where it left off.
 """
 
 import asyncio
+import copy
 import logging
 import uuid
 from collections.abc import Iterable, Sequence
@@ -47,6 +48,32 @@ class Condition:
     label: str
     coordination: str = "blackboard"
     variant_id: str | None = None
+    pattern: str = "mission"  # how the team is organised for the trial (see `apply_pattern`)
+
+
+SINGLE_AGENT = "backend"  # the one persona that builds everything in the single-agent pattern
+PATTERNS = ("single", "mission", "pipeline")
+
+
+def apply_pattern(plan: dict[str, Any], pattern: str) -> dict[str, Any]:
+    """The benchmark's fixed plan, organised for `pattern` (E1). The runner is the same in every
+    case; only who builds what and what reviews it changes:
+
+    - `single`: one agent builds every feature, nothing reviews it (the baseline).
+    - `mission`: the plan as written (P-mission, the default).
+    - `pipeline`: plan, build, then a code review at the end of every milestone.
+    """
+    if pattern not in PATTERNS:
+        raise ValueError(f"unknown pattern {pattern!r}")
+    organised = copy.deepcopy(plan)
+    for milestone in organised["milestones"]:
+        if pattern == "single":
+            milestone["validators"] = []
+            for feature in milestone["features"]:
+                feature["persona"] = SINGLE_AGENT
+        elif pattern == "pipeline":
+            milestone["validators"] = ["code-reviewer"]
+    return organised
 
 
 @dataclass(frozen=True)
@@ -57,13 +84,10 @@ class Experiment:
     varies: str
     conditions: tuple[Condition, ...] = ()
     blocked: str | None = None  # why it cannot run yet; None when it can
+    note: str | None = None  # what the comparison does and does not cover
 
 
 BLOCKED = {
-    "E1": (
-        "needs the other team patterns (single agent, pipeline, reflection, parallel, adaptive); "
-        "only the mission team (P-mission) is built"
-    ),
     "E2": "needs parallel builders, which are not built; features are built one after another",
     "E3": (
         "needs model presets across providers and real keys for each; none has had a live run, "
@@ -74,6 +98,23 @@ BLOCKED = {
         "labeled request set big enough to split"
     ),
 }
+
+E1 = Experiment(
+    id="E1",
+    title="Patterns",
+    question="Does the mission team beat a single agent?",
+    varies="team pattern",
+    conditions=(
+        Condition("single", "Single agent", pattern="single"),
+        Condition("mission", "Mission team (default)", pattern="mission"),
+        Condition("pipeline", "Pipeline: build then review", pattern="pipeline"),
+    ),
+    note=(
+        "Three of the six patterns are built. Reflection, parallel and adaptive are not, so this "
+        "does not answer the whole question. The benchmark plans use only the backend persona, so "
+        "single agent and mission differ only in the review step the pipeline adds."
+    ),
+)
 
 E4 = Experiment(
     id="E4",
@@ -103,20 +144,18 @@ def e5(variants: Sequence[str]) -> Experiment:
 
 
 def experiments(variants: Sequence[str] = ()) -> dict[str, Experiment]:
-    found = {"E4": E4, "E5": e5(variants)}
+    found = {"E1": E1, "E4": E4, "E5": e5(variants)}
     for exp_id, reason in BLOCKED.items():
         found[exp_id] = Experiment(exp_id, _TITLES[exp_id], _QUESTIONS[exp_id], "", (), reason)
     return dict(sorted(found.items()))
 
 
 _TITLES = {
-    "E1": "Patterns",
     "E2": "Serial vs parallel",
     "E3": "Model delegation",
     "E6": "Router",
 }
 _QUESTIONS = {
-    "E1": "Does the mission team beat a single agent?",
     "E2": "Do parallel builders conflict?",
     "E3": "Does mixing models per role pay off?",
     "E6": "LLM Router vs scikit-learn baseline",
@@ -214,7 +253,7 @@ async def run_trial(
                 services.settings,
                 project,
                 idea=app.idea,
-                plan=MissionPlan.model_validate(app.plan),
+                plan=MissionPlan.model_validate(apply_pattern(app.plan, trial.condition.pattern)),
                 budget_usd=budget_usd,
                 variant_id=trial.condition.variant_id,
                 coordination=trial.condition.coordination,
@@ -309,6 +348,7 @@ async def _record(
         config={
             "coordination": trial.condition.coordination,
             "variant_id": trial.condition.variant_id,
+            "pattern": trial.condition.pattern,
             "app": app.id,
             "models": models,
             "unpriced_calls": usage.unpriced_calls if usage else None,

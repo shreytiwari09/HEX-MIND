@@ -1,0 +1,58 @@
+id: inventory
+idea: 'A small stock inventory: keep items with quantities, add and remove stock, and see what is running low
+  and what to reorder. It is a plain CommonJS library (no server): the functions are described in the plan.'
+plan:
+  title: Inventory
+  milestones:
+  - id: m1-stock
+    title: Items and stock
+    validators: []
+    features:
+    - id: stock
+      title: Items and stock levels
+      persona: backend
+      description: src/inventory.js exports createInventory(), addItem(store, {sku, name, qty, reorderAt}),
+        adjust(store, sku, delta), getItem(store, sku) and listItems(store). An item is {sku, name, qty,
+        reorderAt}.
+      expected_behavior:
+      - addItem trims and upper-cases the sku and trims the name; Error('sku required') or Error('name
+        required') when they are empty
+      - addItem throws Error('sku exists') for a sku already used and Error('invalid quantity') when qty (or
+        reorderAt when given) is not an integer of at least 0; reorderAt defaults to 0
+      - adjust adds delta (which may be negative) to the quantity and returns the new quantity; it throws
+        Error('unknown sku') for an unknown sku and Error('insufficient stock') when the quantity would go
+        below 0, leaving the quantity unchanged
+      - getItem accepts the sku in any case and returns the item or null; listItems is sorted by sku
+      target_files:
+      - src/inventory.js
+      - src/inventory.test.js
+  - id: m2-reports
+    title: Reports
+    validators: []
+    features:
+    - id: reports
+      title: Low stock and reorder list
+      persona: backend
+      description: src/reports.js exports lowStock(store), totalUnits(store) and reorderList(store), over the
+        items from src/inventory.js (read them through listItems).
+      expected_behavior:
+      - lowStock returns the items whose qty is at or below reorderAt, fewest units first, then by sku
+      - totalUnits is the sum of all quantities
+      - reorderList returns [{sku, name, needed}] for the low-stock items, sorted by sku, where needed
+        brings the quantity up to twice reorderAt but is at least 1
+      target_files:
+      - src/reports.js
+      - src/reports.test.js
+  validation_contract:
+  - id: VC-1
+    text: Skus are normalised and unique, quantities are validated
+    how: unit test
+    feature: stock
+  - id: VC-2
+    text: Stock can never go below zero, and a refused change leaves it as it was
+    how: unit test
+    feature: stock
+  - id: VC-3
+    text: The low-stock list and the reorder amounts follow the reorder level
+    how: unit test
+    feature: reports

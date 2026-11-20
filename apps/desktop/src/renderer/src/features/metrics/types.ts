@@ -19,6 +19,8 @@ export interface Metrics {
     output_tokens: number
     cost_usd: number
     without_cost: number
+    /** Answered from the response cache: their figures are those measured when first made. */
+    replayed?: number
     avg_latency_ms: number
     p50_latency_ms: number | null
     p95_latency_ms: number | null

@@ -18,6 +18,7 @@ from sqlalchemy import select
 from app.db.models import EvalRun, EvalTask
 from app.evaluation import experiments as exp
 from app.evaluation import missions, results, safety
+from app.missions.models import MissionPlan
 from app.providers.base import Completion, LLMRequest, ToolCall
 from app.sandbox.runner import docker_available
 from tests.conftest import ScriptedAdapter, use_adapter
@@ -32,8 +33,8 @@ APP_ID = "todo-login"
 
 def test_only_the_experiments_that_can_run_are_runnable() -> None:
     catalog = exp.experiments(["terse"])
-    assert [e.id for e in catalog.values() if not e.blocked] == ["E4", "E5"]
-    for blocked in ("E1", "E2", "E3", "E6"):
+    assert [e.id for e in catalog.values() if not e.blocked] == ["E1", "E4", "E5"]
+    for blocked in ("E2", "E3", "E6"):
         assert catalog[blocked].blocked and not catalog[blocked].conditions
     assert exp.experiments()["E5"].blocked  # nothing to compare the baseline with
     assert [c.id for c in catalog["E5"].conditions] == ["baseline", "variant:terse"]
@@ -47,9 +48,31 @@ def test_trials_keep_the_repeats_innermost_and_refuse_a_blocked_experiment() -> 
     assert {t.repeat for t in trials[:4]} == {0}  # every condition and app has repeat 0 first
     assert len({t.key for t in trials}) == len(trials)
     with pytest.raises(ValueError, match="cannot run"):
-        exp.plan_trials(exp.experiments()["E1"], ["a"], 1)
+        exp.plan_trials(exp.experiments()["E2"], ["a"], 1)
     with pytest.raises(ValueError, match="at least 1"):
         exp.plan_trials(exp.E4, ["a"], 0)
+
+
+def test_patterns_reorganise_the_plan_without_touching_the_original() -> None:
+    plan = missions.get_app("notes-tags").plan
+    original = repr(plan)
+
+    single = exp.apply_pattern(plan, "single")
+    pipeline = exp.apply_pattern(plan, "pipeline")
+    same = exp.apply_pattern(plan, "mission")
+
+    def personas(p: dict) -> set[str]:  # type: ignore[type-arg]
+        return {f["persona"] for m in p["milestones"] for f in m["features"]}
+
+    assert personas(single) == {exp.SINGLE_AGENT}
+    assert all(m["validators"] == [] for m in single["milestones"])
+    assert all(m["validators"] == ["code-reviewer"] for m in pipeline["milestones"])
+    assert same == plan and same is not plan
+    assert repr(plan) == original  # the benchmark's plan itself is never changed
+    for organised in (single, pipeline):  # still a plan the app accepts
+        MissionPlan.model_validate(organised)
+    with pytest.raises(ValueError, match="unknown pattern"):
+        exp.apply_pattern(plan, "swarm")
 
 
 # ---------- honest numbers ----------
@@ -128,7 +151,7 @@ def test_the_report_says_what_did_not_run_and_never_calls_a_tie_a_win() -> None:
     data = {
         "experiment": "E4",
         "trials": 6,
-        "benchmark_versions": ["m1"],
+        "benchmark_versions": [missions.BENCHMARK_VERSION],
         "conditions": [
             results.summarize(c, [r for r in rows if r.condition == c], slugs)
             for c in ("blackboard", "messaging")
@@ -140,8 +163,8 @@ def test_the_report_says_what_did_not_run_and_never_calls_a_tie_a_win() -> None:
 
     assert "2026-11-20" in text
     assert "cannot be told apart" in text and "not evidence that they are equal" in text
-    for blocked in ("E1", "E2", "E3", "E6"):
-        assert f"## {blocked} " in text
+    for experiment_id in ("E1", "E2", "E3", "E4", "E5", "E6"):
+        assert f"## {experiment_id} " in text
     assert text.count("**Not run:**") == 5  # E1, E2, E3, E6 and E5 without variants
 
 
@@ -189,10 +212,16 @@ async def test_the_experiments_api_lists_runs_and_reports(
     listing = (await client.get("/api/experiments")).json()
     by_id = {e["id"]: e for e in listing["experiments"]}
     assert listing["benchmark_version"] == missions.BENCHMARK_VERSION
-    assert {a["id"] for a in listing["apps"]} == {"todo-login", "notes-tags", "expense-tracker"}
-    assert by_id["E4"]["blocked"] is None and by_id["E1"]["blocked"]
+    assert {a["id"] for a in listing["apps"]} == {
+        "todo-login",
+        "notes-tags",
+        "expense-tracker",
+        "habit-tracker",
+        "inventory",
+    }
+    assert by_id["E4"]["blocked"] is None and by_id["E2"]["blocked"]
 
-    assert (await client.post("/api/experiments/E1/run", json={})).status_code == 409
+    assert (await client.post("/api/experiments/E2/run", json={})).status_code == 409
     assert (await client.post("/api/experiments/E5/run", json={})).status_code == 409
     assert (await client.post("/api/experiments/E9/run", json={})).status_code == 404
     assert (
@@ -266,7 +295,10 @@ async def test_a_trial_is_graded_by_the_hidden_tests(app: FastAPI, coordination:
     assert (row.experiment, row.condition, row.repeat) == ("E4", coordination, 0)
     assert row.status == "completed" and row.completed and row.passed
     assert row.tests_passed and row.tests_passed == row.tests_total
-    assert row.config["coordination"] == coordination and row.benchmark_version == "m1"
+    assert (
+        row.config["coordination"] == coordination
+        and row.benchmark_version == missions.BENCHMARK_VERSION
+    )
     assert row.mission_id is not None and row.error is None
     assert row.tokens_in is not None and row.latency_ms and row.latency_ms > 0
     async with app.state.sessionmaker() as session:

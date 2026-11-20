@@ -80,6 +80,7 @@ def _call_columns() -> list[Any]:
         func.sum(LLMCall.output_tokens).label("output_tokens"),
         func.sum(LLMCall.est_cost_usd).label("cost"),
         func.avg(LLMCall.latency_ms).label("latency"),
+        func.count().filter(LLMCall.replayed.is_(True)).label("replayed"),
     ]
 
 
@@ -228,6 +229,7 @@ async def compute(session: AsyncSession, scope: Scope) -> dict[str, Any]:
             "input_tokens": int(total.input_tokens or 0),
             "output_tokens": int(total.output_tokens or 0),
             "cost_usd": _num(total.cost),
+            "replayed": int(total.replayed or 0),  # answered from the response cache (D60)
             "without_cost": int(unpriced or 0),  # answered, but no price known (e.g. local models)
             "avg_latency_ms": round(_num(total.latency)),
             "p50_latency_ms": round(percentiles[0]) if percentiles[0] is not None else None,

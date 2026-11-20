@@ -763,3 +763,73 @@
 .trace__attribute {
   display: contents;
 }
+
+/* ---------- Message flow ---------- */
+
+.flow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.flow__lanes,
+.flow__row {
+  display: grid;
+  grid-template-columns: repeat(var(--lanes), minmax(0, 1fr));
+  align-items: center;
+}
+
+.flow__lanes {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--space-1);
+  text-align: center;
+}
+
+.flow__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-left: 0;
+  list-style: none;
+}
+
+.flow__arrow {
+  position: relative;
+  height: 2px;
+  margin: 0 var(--space-3);
+  background: var(--border-strong, var(--border));
+}
+
+.flow__arrow::after {
+  position: absolute;
+  top: -4px;
+  width: 0;
+  height: 0;
+  border: 5px solid transparent;
+  content: '';
+}
+
+.flow__arrow[data-direction='right']::after {
+  right: -2px;
+  border-left-color: var(--text-muted);
+}
+
+.flow__arrow[data-direction='left']::after {
+  left: -2px;
+  border-right-color: var(--text-muted);
+}
+
+.flow__row[data-kind='resend'] .flow__arrow,
+.flow__row[data-kind='timeout'] .flow__arrow {
+  background: repeating-linear-gradient(90deg, var(--text-muted) 0 6px, transparent 6px 10px);
+}
+
+.flow__text {
+  grid-column: 1 / -1;
+  font-size: var(--text-sm);
+}
+
+.flow__summary,
+.flow__id {
+  color: var(--text-muted);
+}

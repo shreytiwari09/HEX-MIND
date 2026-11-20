@@ -144,6 +144,8 @@ class LLMCallCompleted(Payload):
     # that returned nothing.
     request_sha256: str | None = None
     response_sha256: str | None = None
+    # Answered from the response cache: no provider was called (PRD §15.2).
+    replayed: bool = False
 
 
 class ProviderFallback(Payload):

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ApiClient } from '../../lib/api'
 import { describeError } from '../missions/actions'
 import { count, duration, usd } from '../metrics/format'
+import { VariantManager } from './VariantManager'
 import type { ConditionSummary, ExperimentInfo, ExperimentResults, Listing, SafetyReport, Sweep } from './types'
 
 interface Props {
@@ -227,6 +228,7 @@ export function ExperimentsView({ api }: Props) {
           </button>
         </div>
       )}
+      <VariantManager api={api} onChanged={() => void load()} />
       {listing.experiments.map((experiment) => {
         const stored = results.find((r) => r.experiment === experiment.id)
         return (
@@ -235,6 +237,7 @@ export function ExperimentsView({ api }: Props) {
               {experiment.id} {experiment.title}
             </h3>
             <p>{experiment.question}</p>
+            {experiment.note && <p className="mission__muted">{experiment.note}</p>}
             {experiment.blocked ? (
               <p className="mission__muted">Not runnable yet: {experiment.blocked}.</p>
             ) : (

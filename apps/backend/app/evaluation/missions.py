@@ -27,7 +27,7 @@ from app.sandbox.runner import CheckOutcome
 BENCH_DIR = Path(__file__).with_name("mission_benchmark")
 SEED_DIR = BENCH_DIR / "seed"
 # Bump when an app, a plan or a hidden test changes: results of different versions do not compare.
-BENCHMARK_VERSION = "m1"
+BENCHMARK_VERSION = "m2"  # m1 had three apps; m2 adds habit-tracker and inventory
 
 
 @dataclass(frozen=True)

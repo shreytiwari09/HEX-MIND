@@ -53,6 +53,7 @@ async def list_experiments(session: SessionDep) -> dict[str, Any]:
                 "varies": e.varies,
                 "conditions": [{"id": c.id, "label": c.label} for c in e.conditions],
                 "blocked": e.blocked,
+                "note": e.note,
             }
             for e in catalog.values()
         ],
@@ -120,6 +121,15 @@ async def get_safety() -> dict[str, Any]:
     check, so it takes a few seconds."""
     found = await run_in_threadpool(safety.run_safety)
     return {"summary": safety.summary(found), "cases": [vars(r) for r in found]}
+
+
+@router.get("/cache")
+async def get_cache(services: ServicesDep) -> dict[str, Any]:
+    """The response cache (PRD §15.2): its mode (set by HEXMIND_RESPONSE_CACHE) and entries."""
+    cache = services.providers.cache
+    if cache is None:
+        return {"mode": "off", "entries": 0}
+    return {"mode": cache.mode, **await cache.stats()}
 
 
 @router.get("/results")

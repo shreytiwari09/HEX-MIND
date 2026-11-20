@@ -275,6 +275,23 @@ class LLMCall(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=1)
     fallback_from: Mapped[str | None] = mapped_column(String(32))
     error: Mapped[str | None] = mapped_column(Text)
+    # Answered from the response cache (PRD §15.2): the figures are those measured when the call
+    # was really made, and no provider was called this time.
+    replayed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    created_at: Mapped[datetime] = _created_at()
+
+
+class ResponseCacheRow(Base):
+    """A stored model answer, keyed by provider, model and exact request (providers/cache.py)."""
+
+    __tablename__ = "response_cache"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(64))
+    model: Mapped[str] = mapped_column(String(128))
+    completion: Mapped[dict[str, Any]] = mapped_column()
+    est_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
+    latency_ms: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = _created_at()
 
 

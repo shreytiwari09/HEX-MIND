@@ -112,3 +112,72 @@ tasks:
       overdue, completionRate } where overdue counts open todos whose dueDate (ISO date string,
       optional) is before today, and completionRate is done/total rounded to two decimals (0
       for no todos). Add tests.
+
+  - slug: duplicate-todo
+    expected_complexity: low
+    prompt: >-
+      Add duplicateTodo(todos, id) to src/todos.js returning a new array with a copy of the todo
+      appended: same fields except a new id (the next free id), the title suffixed with " (copy)"
+      and done set to false. An unknown id returns an equal new array. Export it and add tests.
+
+  - slug: move-todo
+    expected_complexity: low
+    prompt: >-
+      Add moveTodo(todos, id, toIndex) to src/todos.js returning a new array with the todo moved
+      so it ends up at toIndex (an index outside the list is clamped to the first or last
+      position). An unknown id throws an Error "not found". Export it and add tests.
+
+  - slug: paginate
+    expected_complexity: medium
+    prompt: >-
+      Create src/paginate.js exporting paginate(items, page, pageSize) returning { items, page,
+      pageSize, total, totalPages }. Pages start at 1; a page past the end has no items; an empty
+      list has totalPages 1. A page that is not a positive integer throws Error "invalid page"
+      and a pageSize that is not a positive integer throws Error "invalid pageSize". Add tests.
+
+  - slug: group-by-status
+    expected_complexity: medium
+    prompt: >-
+      Create src/group.js exporting groupByStatus(todos) returning { open, done } (arrays keeping
+      the original order) and groupByDueDate(todos) returning an object that maps each dueDate to
+      its todos, with todos that have no dueDate under the key "none". Add tests.
+
+  - slug: export-csv
+    expected_complexity: medium
+    prompt: >-
+      Create src/csv.js exporting toCsv(todos) and fromCsv(text). toCsv writes the header
+      "id,title,done" then one row per todo; titles containing a comma, a double quote or a line
+      break are wrapped in double quotes with inner quotes doubled; lines are joined with "\n"
+      and there is no trailing newline. fromCsv reads that format back (also accepting CRLF line
+      endings) and skips rows whose id is not an integer or whose done is not "true" or "false".
+      Add tests, including a round trip.
+
+  - slug: recurring
+    expected_complexity: high
+    prompt: >-
+      Create src/recurring.js exporting RULES = ["daily", "weekly", "monthly"] and
+      nextDate(isoDate, rule) returning the next occurrence as an ISO date string (YYYY-MM-DD).
+      Use UTC arithmetic. Monthly keeps the day of the month but clamps to the last day of a
+      shorter month (31 January becomes 28 February, or 29 in a leap year). A string that is not
+      a real calendar date in YYYY-MM-DD form throws Error "invalid date" and an unknown rule
+      throws Error "unknown rule". Add tests.
+
+  - slug: merge-lists
+    expected_complexity: high
+    prompt: >-
+      Create src/merge.js exporting mergeTodos(local, remote) for syncing two lists. Todos have
+      id, title, done, an optional numeric updatedAt (missing counts as 0) and an optional
+      deleted flag. For each id the version with the larger updatedAt wins, and on a tie the
+      local one wins. Todos whose winning version is deleted are left out. The result is ordered
+      by id, contains copies (never the same objects as the inputs) and the inputs are not
+      mutated. Add tests.
+
+  - slug: dependency-order
+    expected_complexity: high
+    prompt: >-
+      Create src/deps.js exporting orderByDependencies(todos). A todo may have an `after` array
+      of todo ids that must come before it. Return the same todo objects in an order where every
+      todo comes after its dependencies; among todos that are ready at the same time keep the
+      original order. An id in `after` that is not in the list throws Error "unknown dependency:
+      <id>" and a cycle (including a todo that depends on itself) throws Error "cycle detected".
+      Add tests.

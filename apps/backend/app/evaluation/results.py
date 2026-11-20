@@ -177,6 +177,8 @@ def render(
             reason = experiment.blocked or "no trials have been run yet"
             lines += [f"**Not run:** {reason}.", ""]
             continue
+        if experiment.note:
+            lines += [f"Note: {experiment.note}", ""]
         if experiment.blocked:
             lines += [f"Note: {experiment.blocked}. Only stored trials are shown.", ""]
         lines += _table(data)
