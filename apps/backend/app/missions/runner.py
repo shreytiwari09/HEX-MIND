@@ -36,8 +36,10 @@ from sqlalchemy import func, select
 
 from app.a2a.client import CrewCallFailed, call_crew
 from app.a2a.protocol import PersonaRequest
+from app.agents import variants
 from app.agents.mcp_bridge import McpWorkspace
-from app.agents.persona import UnknownPersona, get_persona
+from app.agents.persona import Persona, UnknownPersona, get_persona
+from app.agents.variants import Variant
 from app.db.models import (
     AgentEvent,
     CheckResult,
@@ -149,6 +151,8 @@ class MissionRunner:
         self.mcp: McpWorkspace | None = None
         # The dependency files the last successful `install` was run for (reinstall on change).
         self._installed: str | None = None
+        # The prompt variant this mission runs under, if any (agents/variants.py).
+        self.variant: Variant | None = None
 
     # ---------- lifecycle ----------
 
@@ -160,12 +164,48 @@ class MissionRunner:
             run = await session.get(Run, mission.run_id)
             project = await session.get(Project, mission.project_id)
             assert run is not None and project is not None and run.worktree_path
+            try:
+                self.variant = await variants.get(session, mission.variant_id)
+            except variants.VariantError as exc:
+                raise MissionAborted(str(exc)) from None
         self.run_id = run.id
         self.workspace = Path(project.workspace_path)
         self.worktree = Path(run.worktree_path)
         if not self.worktree.is_dir():
             raise MissionAborted("the mission worktree no longer exists")
         self.telemetry = TelemetryHub(self.services, self.run_id, self.loop)
+
+    def persona(self, persona_id: str) -> Persona:
+        """A persona as it is for this mission: the user's current version, with the mission's
+        prompt variant applied."""
+        return variants.apply(get_persona(persona_id), self.variant)
+
+    @property
+    def variant_id(self) -> str | None:
+        return self.variant.id if self.variant else None
+
+    async def _announce_variant(self) -> None:
+        """Record once, when the mission starts, which roles the variant changes."""
+        if self.variant is None:
+            return
+        async with self.services.sessionmaker.begin() as session:
+            seen = await session.scalar(
+                select(AgentEvent.id)
+                .where(
+                    AgentEvent.run_id == self.run_id,
+                    AgentEvent.type == EventType.PROMPT_VARIANT_SELECTED,
+                )
+                .limit(1)
+            )
+            if seen is not None:
+                return  # a resumed mission: already said
+            for role in self.variant.personas:
+                await append_event(
+                    session,
+                    self.run_id,
+                    EventType.PROMPT_VARIANT_SELECTED,
+                    payload={"role": role, "variant": self.variant.id},
+                )
 
     async def close(self) -> None:
         if self.mcp is not None:
@@ -188,6 +228,7 @@ class MissionRunner:
         )
         await run_in_threadpool(self.mcp.start)
         await set_status(self.services, self.run_id, "running")
+        await self._announce_variant()
         await self._back_to_last_checkpoint()
 
         for milestone_id in await self._milestone_ids():
@@ -333,7 +374,7 @@ class MissionRunner:
             await service.sync_mission_folder(session, mission, self.worktree)
         before = await run_in_threadpool(git.head, self.worktree)
         try:
-            persona = get_persona(feature.persona)  # as the user has it now (edits, custom)
+            persona = self.persona(feature.persona)  # the user's edits, and this mission's variant
         except UnknownPersona:
             raise MissionAborted(f"the persona '{feature.persona}' no longer exists") from None
 
@@ -364,6 +405,7 @@ class MissionRunner:
             persona_id=feature.persona,
             persona=persona,
             plugins=plugins,
+            variant_id=self.variant_id,
             feature=feature,
             earlier_handoffs=earlier,
             feedback=feedback,
@@ -424,20 +466,20 @@ class MissionRunner:
             tokens_in=tokens_in,
             tokens_out=tokens_out,
             cost_usd=float(cost),
-            skills=await self._skills_used(feature, request.agent_id, started),
+            skills=await self._skills_used(persona, feature, request.agent_id, started),
             persona_version=persona.version,
+            variant_id=self.variant_id,
             plugins=await self._plugins_used(plugins, request.agent_id, started),
         )
         await self._checkpoint(key, handoff)
         return Attempt("accepted")
 
-    async def _skills_used(self, feature: Feature, agent_id: str, since: object) -> list[SkillUse]:
+    async def _skills_used(
+        self, persona: Persona, feature: Feature, agent_id: str, since: object
+    ) -> list[SkillUse]:
         """The skills the persona was offered for this feature (name and version) and which of
-        them it actually loaded, read from the tool-call log."""
-        try:
-            persona = get_persona(feature.persona)
-        except UnknownPersona:
-            return []
+        them it actually loaded, read from the tool-call log. `persona` is the one the job ran as
+        (the user's edits and the mission's variant applied)."""
         registry = SkillRegistry(self.services.settings.data_dir / "skills")
         offered, _ = await run_in_threadpool(
             registry.resolve, [*persona.skills, *feature.extra_skills]
@@ -801,6 +843,8 @@ class MissionRunner:
                 worktree=str(self.worktree),
                 workspace=str(self.workspace),
                 persona_id="qa",
+                persona=self.persona("qa"),
+                variant_id=self.variant_id,
                 feature=feature,
                 mode="acceptance",
             )
@@ -932,6 +976,7 @@ class MissionRunner:
             telemetry=self.telemetry,
             run_check=self._run_check,
             load_checks=load_checks,
+            variant=self.variant,
         )
         outcomes = await asyncio.gather(
             *(VALIDATORS[name](vc, key, snaps) for name in names), return_exceptions=True

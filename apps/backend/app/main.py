@@ -28,6 +28,7 @@ from app.api import (
     skills,
     stream,
     tasks,
+    variants,
 )
 from app.auth import require_token
 from app.catalog.service import CatalogService
@@ -128,6 +129,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         scoping,
         skills,
         plugins,
+        variants,
     ):
         app.include_router(module.router, prefix="/api", dependencies=[Depends(require_token)])
     app.include_router(missions.needs_router, prefix="/api", dependencies=[Depends(require_token)])

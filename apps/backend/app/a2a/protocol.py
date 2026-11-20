@@ -56,6 +56,9 @@ class PersonaRequest(CrewRequest):
     # The plugins that are ready for this persona now (enabled, and approved if risky), with
     # their configuration: only these are ever started.
     plugins: list[PluginSpec] = Field(default_factory=list)
+    # The prompt variant the mission runs under (already applied to `persona`); recorded on every
+    # model call of this job.
+    variant_id: str | None = None
     feature: Feature
     earlier_handoffs: list[Handoff] = Field(default_factory=list)
     # The exact findings of a rejected attempt, for the retry (PRD §8.6).

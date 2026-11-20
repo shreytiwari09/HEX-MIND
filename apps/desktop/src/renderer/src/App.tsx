@@ -1,6 +1,7 @@
 import {
   Activity,
   Bot,
+  BookOpen,
   Files,
   FolderOpen,
   History,
@@ -33,6 +34,9 @@ import { PersonaEditor } from './features/agents/PersonaEditor'
 import { PersonaList } from './features/agents/PersonaList'
 import { useTeam } from './features/agents/useTeam'
 import { NewPlugin } from './features/plugins/NewPlugin'
+import { AddFromGithub } from './features/skills/AddFromGithub'
+import { SkillList } from './features/skills/SkillList'
+import { SkillPanel } from './features/skills/SkillPanel'
 import { PluginList } from './features/plugins/PluginList'
 import { PluginPanel } from './features/plugins/PluginPanel'
 import { usePlugins } from './features/plugins/usePlugins'
@@ -46,7 +50,7 @@ import { useWorkspace } from './features/workspace/useWorkspace'
 import { useBackendHealth } from './hooks/useBackendHealth'
 import { useBackend } from './lib/backend'
 
-type View = 'explorer' | 'missions' | 'models' | 'observability' | 'agents' | 'plugins' | 'runs' | 'settings'
+type View = 'explorer' | 'missions' | 'models' | 'observability' | 'agents' | 'skills' | 'plugins' | 'runs' | 'settings'
 
 const VIEWS: { id: View; label: string; icon: LucideIcon }[] = [
   { id: 'explorer', label: 'Explorer', icon: Files },
@@ -54,6 +58,7 @@ const VIEWS: { id: View; label: string; icon: LucideIcon }[] = [
   { id: 'models', label: 'Models & Keys', icon: KeyRound },
   { id: 'observability', label: 'Observability', icon: Activity },
   { id: 'agents', label: 'Agents', icon: Bot },
+  { id: 'skills', label: 'Skills', icon: BookOpen },
   { id: 'plugins', label: 'Plugins', icon: Plug },
   { id: 'runs', label: 'Runs', icon: History },
   { id: 'settings', label: 'Settings', icon: Settings }
@@ -62,7 +67,7 @@ const VIEWS: { id: View; label: string; icon: LucideIcon }[] = [
 const BOTTOM_TABS = ['Problems', 'Tasks', 'Agent Events', 'Logs'] as const
 type BottomTab = (typeof BOTTOM_TABS)[number]
 
-const SIDEBAR_EMPTY: Record<Exclude<View, 'explorer' | 'missions' | 'models' | 'observability' | 'agents' | 'plugins' | 'runs'>, string> = {
+const SIDEBAR_EMPTY: Record<Exclude<View, 'explorer' | 'missions' | 'models' | 'observability' | 'agents' | 'skills' | 'plugins' | 'runs'>, string> = {
   settings: ''
 }
 
@@ -87,6 +92,8 @@ export function App() {
   const pluginsData = usePlugins(api)
   const [selectedPluginId, setSelectedPluginId] = useState<string | null>(null)
   const [creatingPlugin, setCreatingPlugin] = useState(false)
+  const [selectedSkill, setSelectedSkill] = useState<string | null>(null)
+  const [addingSkill, setAddingSkill] = useState(false)
   const [selectedPersonaId, setSelectedPersonaId] = useState<string | null>(null)
   const [creatingPersona, setCreatingPersona] = useState(false)
   const [missionsRefresh, setMissionsRefresh] = useState(0)
@@ -263,6 +270,16 @@ export function App() {
                 }}
                 onNew={() => setCreatingPersona(true)}
               />
+            ) : view === 'skills' ? (
+              <SkillList
+                team={team}
+                selectedName={selectedSkill}
+                onSelect={(name) => {
+                  setAddingSkill(false)
+                  setSelectedSkill(name)
+                }}
+                onAdd={() => setAddingSkill(true)}
+              />
             ) : view === 'plugins' ? (
               <PluginList
                 data={pluginsData}
@@ -338,6 +355,22 @@ export function App() {
           )
         ) : view === 'settings' && project ? (
           <PrivacyPanel key={project.id} api={api} projectId={project.id} projectName={project.name} />
+        ) : view === 'skills' ? (
+          addingSkill ? (
+            <AddFromGithub
+              api={api}
+              team={team}
+              onCancel={() => setAddingSkill(false)}
+              onInstalled={(skill) => {
+                setAddingSkill(false)
+                setSelectedSkill(skill.name)
+              }}
+            />
+          ) : selectedSkill ? (
+            <SkillPanel key={selectedSkill} api={api} team={team} name={selectedSkill} onRemoved={() => setSelectedSkill(null)} />
+          ) : (
+            <EmptyState title="Pick a skill, or add one from GitHub" />
+          )
         ) : view === 'plugins' ? (
           creatingPlugin ? (
             <NewPlugin

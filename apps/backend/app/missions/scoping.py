@@ -24,8 +24,10 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents import variants
 from app.agents.adk_llm import HexAdkLlm
-from app.agents.persona import all_personas, get_persona
+from app.agents.persona import Persona, all_personas, get_persona
+from app.agents.variants import Variant, apply
 from app.config import Settings
 from app.db.models import Mission, Project, Run, ScopingSession
 from app.events.log import EventType, append_event
@@ -185,10 +187,10 @@ EXAMPLE = {
 }
 
 
-def pm_skills(registry: SkillRegistry) -> str:
+def pm_skills(registry: SkillRegistry, persona: Persona | None = None) -> str:
     """The PM's own skills, in full: scoping has no tools to load them with, and they hold the
     strategy (how to interview, write the PRD, decompose features; PRD §11.5)."""
-    found, _ = registry.resolve(get_persona(PM).skills)
+    found, _ = registry.resolve((persona or get_persona(PM)).skills)
     return "\n\n".join(f"## Skill: {s.name}\n{s.body}" for s in found)
 
 
@@ -198,8 +200,9 @@ def pm_prompt(
     messages: list[dict[str, Any]],
     must_plan: bool,
     skills: str = "",
+    persona: Persona | None = None,
 ) -> str:
-    persona = get_persona(PM)
+    persona = persona or get_persona(PM)
     transcript = "\n\n".join(
         f"{'User' if m['role'] == 'user' else 'PM'}: {m['content']}"
         + (
@@ -264,6 +267,7 @@ async def pm_turn(
     context: str,
     messages: list[dict[str, Any]],
     must_plan: bool,
+    variant: Variant | None = None,
 ) -> tuple[PmTurn, str | None]:
     """Ask the PM. Returns (turn, error): `error` says why there is no usable answer (no
     provider, or no valid answer after one repair)."""
@@ -271,13 +275,25 @@ async def pm_turn(
         route = await route_for(session, PM)
     llm = HexAdkLlm(
         router=services.providers,
-        ctx=CallContext(run_id=run_id, agent_id="pm_scoping", route=route, persona_id=PM),
+        ctx=CallContext(
+            run_id=run_id,
+            agent_id="pm_scoping",
+            route=route,
+            persona_id=PM,
+            variant_id=variant.id if variant else None,
+        ),
         purpose="planner",
         max_tokens=8192,
     )
     registry = SkillRegistry(services.settings.data_dir / "skills")
+    pm = apply(get_persona(PM), variant)  # the PM as it is under this session's variant
     prompt = pm_prompt(
-        idea, context, messages, must_plan, await run_in_threadpool(pm_skills, registry)
+        idea,
+        context,
+        messages,
+        must_plan,
+        await run_in_threadpool(pm_skills, registry, pm),
+        pm,
     )
     agent = LlmAgent(
         name="pm_scoping",
@@ -310,6 +326,8 @@ async def _ask_pm(services: Services, scoping: ScopingSession, workspace: Path) 
     """Run one PM turn for `scoping` and record it (in the caller's transaction)."""
     asked = sum(1 for m in scoping.messages if m["role"] == "pm" and m.get("questions"))
     context = await run_in_threadpool(project_context, workspace)
+    async with services.sessionmaker() as session:
+        variant = await variants.get(session, scoping.variant_id)
     turn, error = await pm_turn(
         services,
         scoping.run_id,
@@ -317,6 +335,7 @@ async def _ask_pm(services: Services, scoping: ScopingSession, workspace: Path) 
         context=context,
         messages=scoping.messages,
         must_plan=asked >= MAX_QUESTION_TURNS,
+        variant=variant,
     )
     if error is not None:
         scoping.error = error
@@ -345,6 +364,7 @@ async def start(
     *,
     idea: str,
     budget_usd: Decimal | None = None,
+    variant_id: str | None = None,
 ) -> ScopingSession:
     title = " ".join(idea.split())[:80] or "New mission"
     run = Run(project_id=project.id, title=title, status="scoping")
@@ -352,7 +372,12 @@ async def start(
     await session.flush()
     await append_event(session, run.id, EventType.RUN_CREATED, payload={"title": title})
     scoping = ScopingSession(
-        project_id=project.id, run_id=run.id, idea=idea, budget_usd=budget_usd, messages=[]
+        project_id=project.id,
+        run_id=run.id,
+        idea=idea,
+        budget_usd=budget_usd,
+        variant_id=variant_id,
+        messages=[],
     )
     session.add(scoping)
     await session.commit()  # the run exists before its first model call is logged
@@ -441,6 +466,7 @@ async def to_mission(session: AsyncSession, settings: Settings, scoping_id: uuid
         budget_usd=scoping.budget_usd,
         run=run,
         prd=scoping.prd,
+        variant_id=scoping.variant_id,
     )
     scoping.status = "started"
     scoping.mission_id = mission.id

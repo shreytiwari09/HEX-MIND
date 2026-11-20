@@ -97,6 +97,7 @@ class Handoff(AgentReport):
     skills: list[SkillUse] = Field(default_factory=list)
     persona_version: int = 1  # the version of the persona that did the work
     plugins: list[PluginUse] = Field(default_factory=list)
+    variant_id: str | None = None  # the prompt variant the mission ran under
 
     @classmethod
     def assemble(
@@ -113,6 +114,7 @@ class Handoff(AgentReport):
         skills: list[SkillUse] | None = None,
         persona_version: int = 1,
         plugins: list[PluginUse] | None = None,
+        variant_id: str | None = None,
     ) -> "Handoff":
         """Combine the agent's report with measured facts. The agent's own claims about files
         or commands are not part of `AgentReport`, so they cannot leak into the measured fields."""
@@ -129,6 +131,7 @@ class Handoff(AgentReport):
             skills=skills or [],
             persona_version=persona_version,
             plugins=plugins or [],
+            variant_id=variant_id,
         )
 
 

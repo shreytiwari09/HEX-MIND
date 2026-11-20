@@ -23,6 +23,27 @@ export interface SkillInfo {
   version: string
   files: string[]
   personas: string[]
+  /** Where an installed skill came from; null for built-in skills and ones you wrote. */
+  origin: { url: string; commit: string; installed_at: string } | null
+}
+
+export interface SkillDetail extends SkillInfo {
+  body: string
+}
+
+export interface GithubPreview {
+  name: string
+  description: string
+  body: string
+  files: string[]
+  version: string
+  hash: string
+  url: string
+  commit: string
+  /** Why the text may be trying to steer an AI; empty if nothing was found. */
+  signals: string[]
+  /** A skill with this name already exists: 'user' (it would be replaced) or 'builtin' (overridden). */
+  exists: 'user' | 'builtin' | null
 }
 
 export interface SkillsResponse {

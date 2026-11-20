@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import type { ApiClient } from '../../lib/api'
 import { describeError } from './actions'
@@ -58,6 +58,16 @@ export function NewMission({ api, projectId, onCreated, onCancel }: Props) {
   const [session, setSession] = useState<ScopingSession | null>(null)
   const [idea, setIdea] = useState('')
   const [budget, setBudget] = useState('')
+  const [variantId, setVariantId] = useState('')
+  const [variants, setVariants] = useState<{ id: string; name: string }[]>([])
+
+  // Prompt variants (PRD §11.5): optional named configurations to run the mission under.
+  useEffect(() => {
+    api
+      .get<{ id: string; name: string }[]>('/variants')
+      .then((list) => setVariants(Array.isArray(list) ? list : []))
+      .catch(() => setVariants([]))
+  }, [api])
   const [own, setOwn] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -83,7 +93,8 @@ export function NewMission({ api, projectId, onCreated, onCancel }: Props) {
         await api.post<ScopingSession>('/scoping', {
           project_id: projectId,
           idea: idea.trim(),
-          budget_usd: amount
+          budget_usd: amount,
+          variant_id: variantId || undefined
         })
       )
     } catch (err) {
@@ -115,6 +126,19 @@ export function NewMission({ api, projectId, onCreated, onCancel }: Props) {
         Budget in USD (optional)
         <input type="number" min="0" step="0.5" value={budget} onChange={(event) => setBudget(event.target.value)} />
       </label>
+      {variants.length > 0 && (
+        <label className="new-mission__field">
+          Prompt variant (optional)
+          <select value={variantId} onChange={(event) => setVariantId(event.target.value)}>
+            <option value="">None: the team as it is</option>
+            {variants.map((variant) => (
+              <option key={variant.id} value={variant.id}>
+                {variant.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       {error && (
         <p role="alert" className="mission__error">
           {error}

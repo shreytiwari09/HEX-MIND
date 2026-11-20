@@ -219,3 +219,38 @@ describe('answering and reviewing the plan', () => {
     expect(api.post).toHaveBeenCalledWith('/scoping/s1/abandon')
   })
 })
+
+
+describe('choosing a prompt variant', () => {
+  it('offers the variants you have and sends the one you pick', async () => {
+    const api = makeApi({
+      '/variants': [{ id: 'terse', name: 'Terse builders' }],
+      '/scoping': session({ variant_id: 'terse' } as Partial<ScopingSession>)
+    })
+    const p = props(api)
+    render(<NewMission {...p} />)
+
+    const select = await screen.findByLabelText('Prompt variant (optional)')
+    expect(screen.getByRole('option', { name: 'None: the team as it is' })).toBeInTheDocument()
+    fireEvent.change(select, { target: { value: 'terse' } })
+    fireEvent.change(screen.getByLabelText(/What do you want built/), { target: { value: 'A todo app' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Start scoping' }))
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith('/scoping', { project_id: 'p1', idea: 'A todo app', budget_usd: undefined, variant_id: 'terse' })
+    )
+  })
+
+  it('shows no selector when there are no variants, and sends none', async () => {
+    const api = makeApi({ '/variants': [], '/scoping': session() })
+    render(<NewMission {...props(api)} />)
+
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/variants'))
+    expect(screen.queryByLabelText('Prompt variant (optional)')).toBeNull()
+    fireEvent.change(screen.getByLabelText(/What do you want built/), { target: { value: 'A todo app' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Start scoping' }))
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith('/scoping', { project_id: 'p1', idea: 'A todo app', budget_usd: undefined, variant_id: undefined })
+    )
+  })
+})

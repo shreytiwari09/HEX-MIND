@@ -23,8 +23,8 @@ const persona = (extra: Partial<TeamPersona> = {}): TeamPersona => ({
 
 const SKILLS: SkillsResponse = {
   skills: [
-    { name: 'ui-ux-pro', description: 'Layout and hierarchy.', source: 'builtin', version: 'ui-ux-pro@aaa', files: [], personas: ['designer'] },
-    { name: 'motion-graphics', description: 'Animate UIs.', source: 'user', version: 'motion-graphics@bbb', files: [], personas: [] }
+    { name: 'ui-ux-pro', description: 'Layout and hierarchy.', source: 'builtin', version: 'ui-ux-pro@aaa', files: [], personas: ['designer'], origin: null },
+    { name: 'motion-graphics', description: 'Animate UIs.', source: 'user', version: 'motion-graphics@bbb', files: [], personas: [], origin: null }
   ],
   problems: { broken: 'broken: there is no SKILL.md' }
 }

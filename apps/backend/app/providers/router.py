@@ -48,6 +48,8 @@ class CallContext:
     route: "Route | None" = None
     # The persona the call is made for (persona crews), recorded in llm_calls for budgets and costs.
     persona_id: str | None = None
+    # The prompt variant the call runs under (PRD §11.5, E5), recorded in llm_calls.
+    variant_id: str | None = None
 
 
 @dataclass
@@ -321,6 +323,7 @@ class ProviderRouter:
                     connection_id=result.connection_id,
                     key_label=result.key_label,
                     persona_id=ctx.persona_id,
+                    variant_id=ctx.variant_id,
                 )
             )
 

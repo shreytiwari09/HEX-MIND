@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
+from app.agents import variants
 from app.api.deps import ServicesDep, SessionDep, SettingsDep
 from app.api.missions import MissionOut, _mission_out
 from app.db.models import LLMCall, Project, ScopingSession
@@ -23,6 +24,7 @@ class ScopingCreate(BaseModel):
     project_id: uuid.UUID
     idea: str = Field(min_length=3, max_length=8000)
     budget_usd: Decimal | None = Field(default=None, gt=0, le=10_000)
+    variant_id: str | None = Field(default=None, max_length=32)
 
 
 class ScopingReply(BaseModel):
@@ -47,6 +49,7 @@ class ScopingOut(BaseModel):
     error: str | None
     budget_usd: float | None
     mission_id: uuid.UUID | None
+    variant_id: str | None = None
     # What the PM's calls cost so far (from llm_calls, not estimated).
     cost_usd: float
     created_at: datetime
@@ -70,6 +73,7 @@ async def _out(session: SessionDep, row: ScopingSession) -> ScopingOut:
         error=row.error,
         budget_usd=float(row.budget_usd) if row.budget_usd is not None else None,
         mission_id=row.mission_id,
+        variant_id=row.variant_id,
         cost_usd=float(cost or 0),
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -88,8 +92,17 @@ async def start(body: ScopingCreate, session: SessionDep, services: ServicesDep)
     project = await session.get(Project, body.project_id)
     if project is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "project not found")
+    try:
+        await variants.get(session, body.variant_id)
+    except variants.VariantError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from None
     row = await scoping.start(
-        session, services, project, idea=body.idea, budget_usd=body.budget_usd
+        session,
+        services,
+        project,
+        idea=body.idea,
+        budget_usd=body.budget_usd,
+        variant_id=body.variant_id,
     )
     return await _out(session, row)
 

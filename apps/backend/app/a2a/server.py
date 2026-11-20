@@ -226,6 +226,7 @@ class CrewExecutor(AgentExecutor):
                     complexity=request.complexity,
                     route=await self._route(persona, getattr(request, "escalate", False)),
                     persona_id=persona.id if persona else None,
+                    variant_id=getattr(request, "variant_id", None),
                 ),
                 # Writing tests is coding work, whatever the persona's usual role.
                 purpose=(

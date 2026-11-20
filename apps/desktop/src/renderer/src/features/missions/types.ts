@@ -75,6 +75,8 @@ export interface Mission {
   milestones: MissionMilestone[]
   validation_contract: Criterion[]
   apply: MissionApply | null
+  /** The prompt variant it ran under, if any. */
+  variant_id?: string | null
 }
 
 export interface Need {

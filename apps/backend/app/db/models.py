@@ -257,6 +257,8 @@ class LLMCall(Base):
     key_label: Mapped[str | None] = mapped_column(String(64))
     # Which persona the call was made for (persona crews only), to budget and report per persona.
     persona_id: Mapped[str | None] = mapped_column(String(32), index=True)
+    # The prompt variant the call ran under (PRD §11.5, E5), for comparing configurations.
+    variant_id: Mapped[str | None] = mapped_column(String(32), index=True)
     input_tokens: Mapped[int | None] = mapped_column(Integer)
     output_tokens: Mapped[int | None] = mapped_column(Integer)
     latency_ms: Mapped[int] = mapped_column(Integer)
@@ -337,6 +339,8 @@ class Mission(Base):
     apply_record: Mapped[dict[str, Any] | None] = mapped_column()
     # The approved validation contract: [{id, text, how, feature}] (PRD §9.7).
     validation_contract: Mapped[list[Any]] = mapped_column(default=list)
+    # The prompt variant this mission runs under (prompt_variants.id), if any.
+    variant_id: Mapped[str | None] = mapped_column(String(32))
 
 
 class PluginRow(Base):
@@ -354,6 +358,21 @@ class PluginRow(Base):
     approved_hash: Mapped[str | None] = mapped_column(String(64))
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     approved_labels: Mapped[list[Any]] = mapped_column(default=list)
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _updated_at()
+
+
+class PromptVariantRow(Base):
+    """A named set of changes to personas' instructions and skills, for comparing configurations
+    (PRD §11.5, E5). A mission can run under one; every model call it makes records its id."""
+
+    __tablename__ = "prompt_variants"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    description: Mapped[str] = mapped_column(Text, default="")
+    # {persona_id: {"instructions": str | None, "skills": [names] | None}}
+    overrides: Mapped[dict[str, Any]] = mapped_column(default=dict)
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 
@@ -411,6 +430,8 @@ class ScopingSession(Base):
     error: Mapped[str | None] = mapped_column(Text)
     budget_usd: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
     mission_id: Mapped[uuid.UUID | None] = _fk("missions.id", nullable=True, ondelete="SET NULL")
+    variant_id: Mapped[str | None] = mapped_column(String(32))  # the prompt variant it runs under
+    variant_id: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 

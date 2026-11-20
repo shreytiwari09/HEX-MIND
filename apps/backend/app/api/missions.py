@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
+from app.agents import variants
 from app.api.deps import ServicesDep, SessionDep, SettingsDep
 from app.api.schemas import EventOut, FileDiffOut, RunDiffOut
 from app.db.models import (
@@ -35,6 +36,7 @@ class MissionCreate(BaseModel):
     idea: str = Field(min_length=3, max_length=8000)
     plan: MissionPlan
     budget_usd: Decimal | None = Field(default=None, gt=0, le=10_000)
+    variant_id: str | None = Field(default=None, max_length=32)  # run under a prompt variant
 
 
 class FeatureOut(BaseModel):
@@ -88,6 +90,7 @@ class MissionOut(BaseModel):
     milestones: list[MilestoneOut]
     apply: ApplyOut | None
     validation_contract: list[dict]  # type: ignore[type-arg]
+    variant_id: str | None = None  # the prompt variant it ran under
 
 
 async def _mission_out(session: SessionDep, mission: Mission) -> MissionOut:
@@ -111,6 +114,7 @@ async def _mission_out(session: SessionDep, mission: Mission) -> MissionOut:
         milestones=[MilestoneOut.model_validate(m) for m in document["milestones"]],
         apply=_apply_out(mission.apply_record),
         validation_contract=mission.validation_contract or [],
+        variant_id=mission.variant_id,
     )
 
 
@@ -134,6 +138,10 @@ async def create_mission(
     if project is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "project not found")
     try:
+        await variants.get(session, body.variant_id)
+    except variants.VariantError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from None
+    try:
         mission = await service.create_mission(
             session,
             settings,
@@ -141,6 +149,7 @@ async def create_mission(
             idea=body.idea,
             plan=body.plan,
             budget_usd=body.budget_usd,
+            variant_id=body.variant_id,
         )
     except service.NotAGitRepo:
         raise HTTPException(

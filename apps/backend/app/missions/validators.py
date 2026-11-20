@@ -21,6 +21,7 @@ from google.adk.agents import LlmAgent
 from app.agents import roles
 from app.agents.adk_llm import HexAdkLlm
 from app.agents.persona import get_persona
+from app.agents.variants import Variant, apply
 from app.context.redact import find_secrets, is_secret_file
 from app.missions.models import CommandResult, Finding, ValidatorReport
 from app.orchestration.adk import model_error_fallback, run_adk, schema_guard
@@ -76,6 +77,9 @@ class ValidationContext:
     # This milestone's validation-contract criteria, as stored on the mission.
     criteria: list[dict] = field(default_factory=list)  # type: ignore[type-arg]
     acceptance_ready: bool = False
+    # The prompt variant the mission runs under: applied to the persona a reviewer is built from,
+    # and recorded on its model calls.
+    variant: Variant | None = None
 
 
 def _blocked(errors: list[str]) -> roles.ReviewResult:
@@ -98,6 +102,7 @@ async def _ask(
             agent_id=agent,
             route=route,
             persona_id=persona_id,
+            variant_id=vc.variant.id if vc.variant else None,
         ),
         purpose="reviewer",
         max_tokens=2048,
@@ -320,7 +325,7 @@ async def run_security(
             )
         )
 
-    persona = get_persona("security")
+    persona = apply(get_persona("security"), vc.variant)
     prompt = f"""{persona.instructions.strip()}
 
 Review this diff of the milestone "{milestone_key}" for security problems: injection, broken
