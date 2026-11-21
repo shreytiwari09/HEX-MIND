@@ -26,5 +26,6 @@ description: Write `.hex/project.json`, the file every check and validator reads
 
 - Each command is one line and runs offline after `install` (tests and typecheck have no network).
 - Define at least `test`; define `acceptance` so QA's tests can run; leave out checks that do not exist.
+- `test` must run a real test runner on real tests (for example `node --test`). A command that cannot fail, such as `echo "test passed"` or `true`, is not accepted: the app only counts a test run whose output shows tests running.
 - Use `image` (for example `node:22-alpine`) for a prebuilt image, or `dockerfile` for `.hex/Dockerfile`.
 - Check it with `list_checks` and run `test` once before you finish.

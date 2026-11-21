@@ -428,6 +428,48 @@ def test_zero_test_runs_are_not_accepted(output: str, no_tests: bool) -> None:
     assert _accepted(check) is (not no_tests)
 
 
+@pytest.mark.parametrize(
+    "output",
+    [
+        # A test command that cannot fail: exit 0, but nothing shows a test ran (live run, D68).
+        '\n> calc-app@1.0.0 test\n> echo "test passed"\n\ntest passed\n',
+        "",
+        "All good!\n",
+        "ok  \texample.com/calc\t[no test files]\n",
+    ],
+)
+def test_a_passing_check_that_shows_no_tests_running_is_not_accepted(output: str) -> None:
+    from app.sandbox.runner import CheckOutcome, accepted, check_summary
+
+    check = CheckOutcome("test", 0, 10, output)
+
+    assert not accepted(check)
+    assert "no tests" in check_summary(check).lower()
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        "TAP version 13\n# tests 3\n# pass 3\n",  # node, TAP reporter
+        "\u2139 tests 6\n\u2139 pass 6\n",  # node, spec reporter
+        "Tests:       3 passed, 3 total\n",  # jest
+        " Tests  4 passed (4)\n",  # vitest
+        "===== 5 passed in 0.12s =====\n",  # pytest
+        "Ran 2 tests in 0.001s\n\nOK\n",  # unittest
+        "  3 passing (8ms)\n",  # mocha
+        "ok  \texample.com/calc\t0.002s\n",  # go
+        "test result: ok. 7 passed; 0 failed\n",  # cargo
+        "3 examples, 0 failures\n",  # rspec
+        "OK (3 tests, 5 assertions)\n",  # phpunit
+    ],
+)
+def test_real_test_runs_are_accepted(output: str) -> None:
+    from app.sandbox.runner import CheckOutcome, accepted
+
+    assert accepted(CheckOutcome("test", 0, 10, output))
+    assert not accepted(CheckOutcome("test", 1, 10, output))  # a failing run never counts
+
+
 class SlowAdapter(ScriptedAdapter):
     """Coder calls take longer than the task lease, like a local model on modest hardware."""
 

@@ -271,14 +271,33 @@ def _ms(started: float) -> int:
 _NO_TESTS = re.compile(r"(?m)^(?:\S+\s+)?tests 0\s*$|\bRan 0 tests\b")
 
 
+# What a test runner prints after running at least one test: node's TAP and spec reporters
+# ("# tests 3", "ℹ tests 6"), "N passed" (pytest, jest, vitest, cargo), "N passing" (mocha),
+# unittest ("Ran 2 tests"), rspec ("3 examples, 0 failures"), phpunit ("OK (3 tests"), and go's
+# per-package "ok  pkg  0.01s" (not "ok  pkg  [no test files]").
+_TESTS_RAN = re.compile(
+    r"(?m)^(?:\S+\s+)?tests [1-9]\d*\s*$"
+    r"|\b[1-9]\d* (?:passed|passing)\b"
+    r"|\bRan [1-9]\d* tests?\b"
+    r"|\b[1-9]\d* examples?, 0 failures\b"
+    r"|\bOK \([1-9]\d* tests?\b"
+    r"|^ok\s+\S+\s+\(?[\d.]+m?s\)?\s*$"
+)
+
+
 def ran_no_tests(check: CheckOutcome) -> bool:
     return bool(_NO_TESTS.search(check.output_tail))
 
 
+def shows_tests_ran(check: CheckOutcome) -> bool:
+    return bool(_TESTS_RAN.search(check.output_tail))
+
+
 def accepted(check: CheckOutcome) -> bool:
-    """A check counts only if it passed *and* actually ran tests; exit 0 with no tests proves
-    nothing (`node --test` succeeds in an empty project)."""
-    return check.passed and not ran_no_tests(check)
+    """A check counts only if it passed *and* its output shows tests running. Exit 0 alone
+    proves nothing: `node --test` succeeds in an empty project, and a builder once set the test
+    command to `echo "test passed"`, which can never fail (live run, PRD D68)."""
+    return check.passed and not ran_no_tests(check) and shows_tests_ran(check)
 
 
 def check_summary(check: CheckOutcome | None) -> str:
@@ -288,6 +307,11 @@ def check_summary(check: CheckOutcome | None) -> str:
         return f"{check.name}: did not complete ({check.error})"
     if check.passed and ran_no_tests(check):
         status = "exited 0 but ran NO tests (add *.test.js files using node:test)"
+    elif check.passed and not shows_tests_ran(check):
+        status = (
+            "exited 0 but its output shows NO tests running: the test command must run a real "
+            "test runner (for example `node --test`) on real tests; `echo` or `true` prove nothing"
+        )
     else:
         status = "passed" if check.passed else f"FAILED (exit {check.exit_code})"
     return f"{check.name}: {status}\n{check.output_tail[-1500:]}"
