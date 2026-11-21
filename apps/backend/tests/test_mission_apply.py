@@ -12,7 +12,7 @@ import pytest
 from fastapi import FastAPI
 from sqlalchemy import select
 
-from app.db.models import Checkpoint, HandoffRow
+from app.db.models import Checkpoint, HandoffRow, Mission
 from app.sandbox.runner import docker_available
 from tests.conftest import ScriptedAdapter, use_adapter
 from tests.test_mission_runner import (
@@ -28,9 +28,8 @@ from tests.test_missions import git_output
 
 pytestmark = pytest.mark.skipif(not docker_available()[0], reason="Docker unavailable")
 
+MISSION_NOTES = {".hex/mission/features.json", ".hex/mission/handoffs.jsonl"}
 APPLIED_FILES = {
-    ".hex/mission/features.json",
-    ".hex/mission/handoffs.jsonl",
     "src/filter.js",
     "src/filter.test.js",
     "src/todos.js",
@@ -52,6 +51,12 @@ def post(client: httpx.AsyncClient, mission: dict[str, Any], action: str, **body
     return client.post(f"/api/missions/{mission['id']}/{action}", json=body or None)
 
 
+def mission_branch(root: Path, mission: dict[str, Any]) -> str:
+    return git_output(
+        root, "branch", "--list", f"hex/mission-{mission['id'].replace('-', '')[:12]}"
+    ).strip()
+
+
 def committed_files(root: Path, ref: str = "HEAD") -> set[str]:
     return set(git_output(root, "show", "--name-only", "--format=", ref).split())
 
@@ -64,7 +69,7 @@ async def test_apply_writes_the_changes_and_commits_only_them(
     before = git_output(repo, "rev-parse", "HEAD").strip()
 
     diff = (await client.get(f"/api/missions/{mission['id']}/diff")).json()
-    assert {f["path"] for f in diff["files"]} == APPLIED_FILES
+    assert {f["path"] for f in diff["files"]} == APPLIED_FILES | MISSION_NOTES
     assert {f["status"] for f in diff["files"]} == {"pending"}
     assert not (repo / "src").exists()  # reviewing changes nothing
 
@@ -74,7 +79,7 @@ async def test_apply_writes_the_changes_and_commits_only_them(
     body = response.json()
     assert body["status"] == "applied"
     assert set(body["apply"]["files"]) == APPLIED_FILES
-    assert body["apply"]["state"] == "applied" and body["apply"]["include_mission_files"] is True
+    assert body["apply"]["state"] == "applied" and body["apply"]["include_mission_files"] is False
     assert (repo / "src" / "todos.js").read_text() == TODOS_JS
     assert (repo / "src" / "filter.js").read_text() == FILTER_JS
     # One commit on the user's branch with exactly the mission's files, not their own work.
@@ -83,12 +88,54 @@ async def test_apply_writes_the_changes_and_commits_only_them(
     assert committed_files(repo) == APPLIED_FILES
     assert git_output(repo, "log", "-1", "--format=%s").strip() == "H.E.X Mind: Todo app"
     assert git_output(repo, "status", "--porcelain").strip() == "?? notes.txt"
-    assert (await client.get(f"/api/missions/{mission['id']}/diff")).json()["files"][0][
-        "status"
-    ] == "applied"
+    after = (await client.get(f"/api/missions/{mission['id']}/diff")).json()["files"]
+    assert {f["path"] for f in after} == APPLIED_FILES  # read from the apply commit now
+    assert {f["status"] for f in after} == {"applied"}
+    assert next(f for f in after if f["path"] == "src/todos.js")["modified"] == TODOS_JS
     _, _, run = await load(app, mission["id"])
     assert run.pre_apply_commit
     assert (await post(client, mission, "apply")).status_code == 409  # not twice
+
+
+async def test_apply_cleans_up_the_working_copy_and_keeps_the_team_notes_out(
+    app: FastAPI, client: httpx.AsyncClient, repo: Path
+) -> None:
+    mission = await completed(app, client, repo)
+    _, _, run = await load(app, mission["id"])
+    worktree = Path(run.worktree_path)
+    assert worktree.is_dir()
+
+    assert (await post(client, mission, "apply")).status_code == 200
+
+    _, _, run = await load(app, mission["id"])
+    assert run.worktree_path is None and not worktree.exists()  # the copy is gone
+    assert mission_branch(repo, mission) == ""  # and so is its branch
+    assert not (repo / ".hex" / "mission").exists()  # the team's notes stay out of the project
+    # Revert still works without the working copy
+    assert (await post(client, mission, "revert")).status_code == 200
+    assert not (repo / "src" / "todos.js").exists()
+    # and it can go in again, rebuilt from the apply commit
+    assert (await post(client, mission, "apply")).status_code == 200
+    assert (repo / "src" / "todos.js").read_text() == TODOS_JS
+
+
+async def test_the_startup_sweep_removes_copies_left_by_older_versions(
+    app: FastAPI, client: httpx.AsyncClient, repo: Path
+) -> None:
+    from app.missions.cleanup import clean_finished_worktrees
+
+    mission = await completed(app, client, repo)
+    _, _, run = await load(app, mission["id"])
+    worktree = Path(run.worktree_path)
+    async with app.state.sessionmaker.begin() as session:  # as an older version left it
+        row = await session.get(Mission, uuid.UUID(mission["id"]))
+        row.status = "discarded"
+
+    assert await clean_finished_worktrees(app.state.services) == 1
+
+    _, _, run = await load(app, mission["id"])
+    assert run.worktree_path is None and not worktree.exists()
+    assert await clean_finished_worktrees(app.state.services) == 0
 
 
 async def test_apply_can_skip_the_mission_files_and_the_commit(
@@ -100,10 +147,7 @@ async def test_apply_can_skip_the_mission_files_and_the_commit(
     response = await post(client, mission, "apply", include_mission_files=False, commit=False)
 
     body = response.json()
-    assert set(body["apply"]["files"]) == APPLIED_FILES - {
-        ".hex/mission/features.json",
-        ".hex/mission/handoffs.jsonl",
-    }
+    assert set(body["apply"]["files"]) == APPLIED_FILES
     assert body["apply"]["commit"] is None
     assert not (repo / ".hex").exists()
     assert git_output(repo, "rev-parse", "HEAD").strip() == before  # nothing committed
@@ -186,8 +230,8 @@ async def test_keep_then_apply_and_the_states_that_do_not_allow_it(
 async def test_discard_removes_the_worktree_and_branch_but_not_a_revert(
     app: FastAPI, client: httpx.AsyncClient, repo: Path
 ) -> None:
+    # a finished mission you do not want: its copy and branch go
     mission = await completed(app, client, repo)
-    await post(client, mission, "apply")
     row, _, run = await load(app, mission["id"])
     worktree = Path(run.worktree_path or "")
     assert worktree.is_dir()
@@ -198,9 +242,18 @@ async def test_discard_removes_the_worktree_and_branch_but_not_a_revert(
     assert not worktree.exists()
     assert git_output(repo, "branch", "--list", row.branch).strip() == ""
     assert (await load(app, mission["id"]))[2].worktree_path is None
-    assert (repo / "src" / "todos.js").exists()  # the applied files stay in the project
     assert (await client.get(f"/api/missions/{mission['id']}/diff")).status_code == 409
     assert (await post(client, mission, "discard")).status_code == 409
+
+
+async def test_discarding_an_applied_mission_keeps_its_files_and_its_revert(
+    app: FastAPI, client: httpx.AsyncClient, repo: Path
+) -> None:
+    mission = await completed(app, client, repo)
+    await post(client, mission, "apply")
+
+    assert (await post(client, mission, "discard")).json()["status"] == "discarded"
+    assert (repo / "src" / "todos.js").exists()  # the applied files stay in the project
 
 
 async def test_discarding_a_mission_that_needs_you_closes_its_run_and_items(

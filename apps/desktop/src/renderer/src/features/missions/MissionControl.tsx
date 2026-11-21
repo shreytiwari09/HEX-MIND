@@ -4,10 +4,12 @@ import { useEffect, useRef, useState } from 'react'
 import type { BackendConfig } from '../../../../preload/api'
 import type { ApiClient } from '../../lib/api'
 import { describeError, postAction, type MissionAction } from './actions'
+import { HandoffPanel } from '../handoff/HandoffPanel'
 import { ApplyPanel } from './ApplyPanel'
 import { Checkpoints } from './Checkpoints'
 import { CostsPanel } from './CostsPanel'
 import { ProvenancePanel } from './ProvenancePanel'
+import { ActivityFeed, TeamRoster } from './TeamRoster'
 import { ValidationPanel } from './ValidationPanel'
 import { FeatureTree } from './FeatureTree'
 import { NeedsYou } from './NeedsYou'
@@ -195,6 +197,11 @@ export function MissionScreen({
 
       <NeedsYou api={api} needs={needs} onAnswered={adopt} />
       {actions.review && <ApplyPanel api={api} mission={mission} onChanged={adopt} />}
+      {mission.status === 'applied' && (
+        <HandoffPanel api={api} projectId={mission.project_id} projectName={mission.title} />
+      )}
+
+      <TeamRoster events={events} active={mission.status === 'running'} />
 
       <div className="mission__body">
         <div className="mission__main">
@@ -296,15 +303,23 @@ function ActiveFeatureCard({ mission, active }: { mission: Mission; active: Retu
 }
 
 function LiveOutput({ view }: { view: MissionView }) {
+  const [raw, setRaw] = useState(false)
   const lines = toLines(view.events, isWorkerEvent, OUTPUT_LINES)
   const end = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    end.current?.scrollIntoView?.({ block: 'end' })
-  }, [lines.length])
+    if (raw) end.current?.scrollIntoView?.({ block: 'end' })
+  }, [lines.length, raw])
   return (
     <section className="mission__card mission__output" aria-label="Live output">
-      <h3 className="mission__section-title">Live output</h3>
-      {lines.length === 0 ? (
+      <div className="mission__output-head">
+        <h3 className="mission__section-title">{raw ? 'Raw log' : 'Activity'}</h3>
+        <button type="button" className="button button--small" aria-pressed={raw} onClick={() => setRaw((r) => !r)}>
+          {raw ? 'Show steps' : 'Show raw log'}
+        </button>
+      </div>
+      {!raw ? (
+        <ActivityFeed events={view.events} />
+      ) : lines.length === 0 ? (
         <p className="mission__muted">Nothing yet. Tool calls, checks and model calls appear here as they happen.</p>
       ) : (
         <ol className="mission__lines">

@@ -44,7 +44,7 @@ Most AI coding tools are one agent doing everything: planning, writing, and grad
 
 - 🧠 **Any model, per team member.** OpenAI, Anthropic, Gemini, Groq, DeepSeek, Mistral, xAI, NVIDIA, OpenRouter, Ollama (local) or any OpenAI-compatible endpoint. **Auto** picks a model for each role from what *your* account can call, measured: free first, refused never, speed and rate limits shown.
 - 🛡️ **Safe by default.** Agents work in a git worktree; generated code only runs in a hardened container; API keys never reach the sandbox, the UI, logs or git.
-- 🔭 **Full observability.** Live task board, agent topology (ADK → A2A → CrewAI), every model call with tokens, cost and latency, and a trace per run.
+- 🔭 **Full observability.** A live team view (who is working on what, right now, from real events), agent topology (ADK → A2A → CrewAI), every model call with tokens, cost and latency, and a trace per run.
 - 🧩 **Skills and plugins.** 28 built-in skills (SKILL.md), install more from GitHub (Claude and Codex skills work), and attach MCP servers per team member.
 - ⌨️ **Feels like an IDE.** Monaco editor, file explorer, command palette (<kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd>), keyboard shortcuts, status bar, a terminal into the project's sandbox.
 - 📏 **Measured, not claimed.** A built-in evaluation harness (benchmark missions with hidden tests) to compare models and setups.
@@ -94,7 +94,8 @@ npm start         # starts the backend and opens the app
 2. **Missions → New mission.** Describe the idea in a few sentences. The PM may ask a question or two.
 3. **Watch.** Progress appears in the mission screen and in its own chat conversation.
 4. **Try it before you keep it.** When the mission ends, a web app starts automatically and its link appears in chat. Say *"run it"* any time, *"run 12 / 4"* for a command-line program, or *"open terminal"* for a shell in the sandbox.
-5. **Review changes → Apply** (or Discard). Applied work is one commit; **Revert** undoes it.
+5. **Review changes → Apply** (or Discard). Applied work is one commit; **Revert** undoes it. The team's working copy is deleted once you apply.
+6. **Next steps** (on the mission screen): **Prepare for GitHub** adds `.env.example`, a CI workflow that runs your tests on every push, Dependabot and deploy notes; **Publish** creates a private GitHub repository with your own `gh` login (H.E.X never sees a GitHub token) and pushes it.
 
 ---
 

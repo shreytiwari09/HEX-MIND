@@ -46,7 +46,12 @@ function registerIpc(): void {
   ipcMain.handle(IPC.pickWorkspace, async (event): Promise<string | null> => {
     assertTrustedSender(event)
     const owner = BrowserWindow.fromWebContents(event.sender)
-    const options = { title: 'Open workspace', properties: ['openDirectory' as const] }
+    const options = {
+      title: 'Open or create a project folder',
+      buttonLabel: 'Open',
+      // createDirectory: the New Folder button on macOS; promptToCreate: typing a new name on Windows
+      properties: ['openDirectory' as const, 'createDirectory' as const, 'promptToCreate' as const]
+    }
     const result = owner
       ? await dialog.showOpenDialog(owner, options)
       : await dialog.showOpenDialog(options)

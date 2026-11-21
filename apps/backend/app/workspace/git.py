@@ -87,6 +87,13 @@ def create_worktree(root: Path, base: str, path: Path, branch: str) -> Path:
     return path
 
 
+def checkout_commit(root: Path, commit: str, path: Path) -> Path:
+    """A temporary detached worktree at `commit` (to re-apply a mission from its commit)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _git(root, "worktree", "add", "-q", "--detach", str(path), commit)
+    return path
+
+
 def remove_worktree(root: Path, path: Path) -> None:
     _git(root, "worktree", "remove", "--force", str(path), check=False)
     if path.exists():
@@ -168,6 +175,17 @@ def diff(worktree: Path, base: str) -> list[FileDiff]:
     changes: list[FileDiff] = []
     for status, path in zip(fields[0::2], fields[1::2], strict=True):
         text = _git(worktree, "diff", "--cached", "--no-renames", base, "--", path).stdout
+        changes.append(FileDiff(path, _STATUS.get(status[0], "modified"), text))  # type: ignore[arg-type]
+    return changes
+
+
+def diff_commits(root: Path, base: str, commit: str) -> list[FileDiff]:
+    """Changes between two commits (an applied mission once its worktree is gone)."""
+    names = _git(root, "diff", "--no-renames", "--name-status", "-z", base, commit).stdout
+    fields = [f for f in names.split("\0") if f]
+    changes: list[FileDiff] = []
+    for status, path in zip(fields[0::2], fields[1::2], strict=True):
+        text = _git(root, "diff", "--no-renames", base, commit, "--", path).stdout
         changes.append(FileDiff(path, _STATUS.get(status[0], "modified"), text))  # type: ignore[arg-type]
     return changes
 

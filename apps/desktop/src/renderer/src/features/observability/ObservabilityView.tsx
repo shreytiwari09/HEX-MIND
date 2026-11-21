@@ -7,6 +7,7 @@ import { useRunTasks } from '../runs/useRunTasks'
 import { A2AExplorer } from './A2AExplorer'
 import { AgentGrid } from './AgentGrid'
 import { AuditPanel } from './AuditPanel'
+import { ActivityFeed, TeamRoster } from '../missions/TeamRoster'
 import { BlackboardBoard } from './BlackboardBoard'
 import { CallbackStream } from './CallbackStream'
 import { MessageFlow } from './MessageFlow'
@@ -14,7 +15,9 @@ import { PatternTopology } from './PatternTopology'
 import { SchemaChecks } from './SchemaChecks'
 import { TracePanel } from './TracePanel'
 
-const TABS = ['Blackboard', 'Agents', 'Callbacks', 'Schema checks', 'A2A', 'Messages', 'Topology', 'Trace', 'Audit'] as const
+const TABS = ['Overview', 'Blackboard', 'Agents', 'Callbacks', 'Schema checks', 'A2A', 'Messages', 'Topology', 'Trace', 'Audit'] as const
+/** The views for people debugging the agents; the Overview is for everyone. */
+const DEVELOPER_TABS = new Set<Tab>(['Callbacks', 'Schema checks', 'A2A', 'Messages', 'Trace', 'Audit'])
 type Tab = (typeof TABS)[number]
 
 interface Props {
@@ -24,7 +27,8 @@ interface Props {
 
 /** The Observability activity: live views of one run, all derived from recorded data. */
 export function ObservabilityView({ api, runId }: Props) {
-  const [tab, setTab] = useState<Tab>('Blackboard')
+  const [tab, setTab] = useState<Tab>('Overview')
+  const [developer, setDeveloper] = useState(false)
   const { run, events, error } = useRunEvents(api, runId)
   const { tasks } = useRunTasks(api, runId)
 
@@ -52,14 +56,37 @@ export function ObservabilityView({ api, runId }: Props) {
         )}
       </header>
       <div className="tabs" role="tablist" aria-label="Observability views">
-        {TABS.map((t) => (
+        {TABS.filter((t) => (developer || !DEVELOPER_TABS.has(t)) && (t !== 'Blackboard' || tasks.length > 0)).map((t) => (
           <button key={t} type="button" role="tab" className="tabs__tab" aria-selected={tab === t} onClick={() => setTab(t)}>
             {t}
           </button>
         ))}
+        <label className="observability__dev">
+          <input
+            type="checkbox"
+            checked={developer}
+            onChange={(event) => {
+              setDeveloper(event.target.checked)
+              if (!event.target.checked && DEVELOPER_TABS.has(tab)) setTab('Overview')
+            }}
+          />
+          Developer details
+        </label>
       </div>
       <div className="observability__body" role="tabpanel" aria-label={tab}>
-        {tab === 'Blackboard' ? (
+        {tab === 'Overview' ? (
+          <div className="observability__overview">
+            <TeamRoster events={events} active={run?.status === 'running' || run?.status === 'scoping'} />
+            <h3 className="mission__section-title">Activity</h3>
+            <ActivityFeed events={events} limit={500} />
+            {tasks.length === 0 && (
+              <p className="mission__muted">
+                The Blackboard tab appears when a run shares tasks on the board (chat Edit runs). Missions coordinate
+                through the plan instead, so their work shows here and on the mission screen.
+              </p>
+            )}
+          </div>
+        ) : tab === 'Blackboard' ? (
           <BlackboardBoard tasks={tasks} events={events} />
         ) : tab === 'Agents' ? (
           <AgentGrid events={events} />

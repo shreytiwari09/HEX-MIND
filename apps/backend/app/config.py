@@ -78,8 +78,10 @@ class Settings(BaseSettings):
     catalog_auto_refresh: bool = True
     # Where API keys are kept: the OS keychain, or (tests, throwaway sessions) this process only.
     key_store: Literal["keyring", "memory"] = "keyring"
-    # Apply also writes the mission's `.hex/` files (docs, run contract) into the user's project.
-    apply_mission_files: bool = True
+    # Apply also writes the team's working notes (`.hex/mission/`: plan, handoffs, validator
+    # reports) into the user's project. Off: they stay with the mission (D83). The run contract
+    # (`.hex/project.json`) is always applied.
+    apply_mission_files: bool = False
     # Agents use native (structured) tool calls; False falls back to CrewAI's text ReAct.
     native_tool_calling: bool = True
 

@@ -20,6 +20,7 @@ from app.api import (
     connections,
     conversations,
     experiments,
+    handoff,
     health,
     metrics,
     missions,
@@ -45,6 +46,7 @@ from app.context.manager import ContextManager
 from app.db.session import create_engine, create_sessionmaker
 from app.events.hub import EventHub
 from app.memory.store import Memory, OllamaEmbedding
+from app.missions.cleanup import clean_finished_worktrees
 from app.missions.recovery import pause_interrupted_missions
 from app.orchestration.background import BackgroundTasks
 from app.orchestration.services import Services
@@ -86,6 +88,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         async with sessionmaker() as session:
             await persona_store.refresh(session)  # the user's edited and custom personas
         await pause_interrupted_missions(services)  # a mission cannot run without its runner
+        services.background.spawn(clean_finished_worktrees(services), name="worktree-cleanup")
         if settings.catalog_auto_refresh:
             services.background.spawn(model_catalog.refresh_if_stale(), name="catalog-refresh")
         if settings.crew_service_autostart:
@@ -128,6 +131,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     for module in (
         health,
         projects,
+        handoff,
         runs,
         providers,
         conversations,

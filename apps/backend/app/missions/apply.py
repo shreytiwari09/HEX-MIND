@@ -19,7 +19,9 @@ from app.workspace import git
 from app.workspace.files import content_hash
 from app.workspace.paths import resolve_in_workspace
 
-MISSION_FILES_PREFIX = ".hex/"
+# The team's working notes (plan, handoffs, validator reports). The run contract in
+# .hex/project.json is always applied: "run it" and the next mission need it (D83).
+MISSION_FILES_PREFIX = ".hex/mission/"
 
 
 class Refused(Exception):

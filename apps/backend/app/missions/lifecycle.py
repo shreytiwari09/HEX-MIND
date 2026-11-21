@@ -50,7 +50,10 @@ class Context:
     @property
     def worktree(self) -> Path:
         if not self.run.worktree_path:
-            raise Refused("the mission worktree was removed")
+            raise Refused(
+                "the mission's working copy was cleaned up after it was applied; to build it "
+                "again, start a new mission"
+            )
         return Path(self.run.worktree_path)
 
     @property
@@ -83,14 +86,27 @@ async def mission_diff(services: Services, mission_id: uuid.UUID) -> tuple[Conte
     async with services.sessionmaker() as session:
         ctx = await _load(session, mission_id)
 
+    record = ctx.mission.apply_record or {}
+    applied_commit = record.get("commit") if record.get("state") == "applied" else None
+
     def read() -> list[dict]:
         files = []
-        for change in git.diff(ctx.worktree, ctx.base):
+        if not ctx.run.worktree_path and applied_commit:
+            # Applied and cleaned up: the changes are the apply commit in the user's project.
+            changes = git.diff_commits(ctx.workspace, ctx.base, applied_commit)
+        else:
+            changes = git.diff(ctx.worktree, ctx.base)
+        for change in changes:
             original = git.show_file(ctx.workspace, ctx.base, change.path)
-            target = ctx.worktree / change.path
-            modified = (
-                target.read_text(encoding="utf-8", errors="replace") if target.is_file() else None
-            )
+            if not ctx.run.worktree_path and applied_commit:
+                modified = git.show_file(ctx.workspace, applied_commit, change.path)
+            else:
+                target = ctx.worktree / change.path
+                modified = (
+                    target.read_text(encoding="utf-8", errors="replace")
+                    if target.is_file()
+                    else None
+                )
             files.append(
                 {
                     "path": change.path,
@@ -124,20 +140,42 @@ async def apply_mission(
     async with services.sessionmaker.begin() as session:
         ctx = await _load(session, mission_id, lock=True)
         _require(ctx, services, REVIEWABLE, "applied")
-        record = await run_in_threadpool(
-            applying.apply_changes,
-            ctx.workspace,
-            ctx.worktree,
-            ctx.base,
-            include_mission_files=include,
-            commit=commit,
-            message=f"H.E.X Mind: {ctx.mission.title}",
-        )
+        earlier = ctx.mission.apply_record or {}
+        source, temporary = None, None
+        if (
+            not ctx.run.worktree_path
+            and earlier.get("state") == "reverted"
+            and earlier.get("commit")
+        ):
+            # Applied, cleaned up, then reverted: the work lives on in the apply commit.
+            temporary = services.settings.data_dir / "worktrees" / f"{ctx.run.id}-reapply"
+            source = await run_in_threadpool(
+                git.checkout_commit, ctx.workspace, earlier["commit"], temporary
+            )
+        try:
+            record = await run_in_threadpool(
+                applying.apply_changes,
+                ctx.workspace,
+                source or ctx.worktree,
+                ctx.base,
+                include_mission_files=include,
+                commit=commit,
+                message=f"H.E.X Mind: {ctx.mission.title}",
+            )
+        finally:
+            if temporary is not None:
+                await run_in_threadpool(git.remove_worktree, ctx.workspace, temporary)
         await service.change_status(
             session, ctx.mission, "applied", reason="applied to your project"
         )
         ctx.mission.apply_record = record
         ctx.run.pre_apply_commit = record["pre_apply_commit"]
+        if record.get("commit") and ctx.run.worktree_path:
+            # The work is now a commit in the user's project: the working copy and its branch
+            # are no longer needed (Revert uses the apply record; review reads the commit).
+            await run_in_threadpool(git.remove_worktree, ctx.workspace, ctx.worktree)
+            await run_in_threadpool(git.delete_branch, ctx.workspace, ctx.mission.branch)
+            ctx.run.worktree_path = None
 
 
 async def revert_mission(services: Services, mission_id: uuid.UUID) -> None:

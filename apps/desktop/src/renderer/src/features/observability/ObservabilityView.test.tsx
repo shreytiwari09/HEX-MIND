@@ -91,6 +91,7 @@ function api(): ApiClient {
 describe('ObservabilityView', () => {
   it('shows the live Blackboard with workers, leases and dependencies', async () => {
     render(<ObservabilityView api={api()} runId="r1" />)
+    fireEvent.click(await screen.findByRole('tab', { name: 'Blackboard' })) // shown because this run has tasks
     expect(await screen.findByText('Filter helper')).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Running' })).toHaveTextContent('coder_02')
     expect(screen.getByRole('region', { name: 'Completed' })).toHaveTextContent('Todo model')
@@ -100,7 +101,9 @@ describe('ObservabilityView', () => {
 
   it('switches to callbacks, agents and schema checks', async () => {
     render(<ObservabilityView api={api()} runId="r1" />)
+    fireEvent.click(await screen.findByRole('tab', { name: 'Blackboard' }))
     await screen.findByText('Filter helper')
+    fireEvent.click(screen.getByLabelText('Developer details'))
 
     fireEvent.click(screen.getByRole('tab', { name: 'Callbacks' }))
     expect(await screen.findByText('after_model_callback')).toBeInTheDocument()
@@ -120,7 +123,9 @@ describe('ObservabilityView', () => {
 
   it('shows agent cards and A2A exchanges', async () => {
     render(<ObservabilityView api={api()} runId="r1" />)
+    fireEvent.click(await screen.findByRole('tab', { name: 'Blackboard' }))
     await screen.findByText('Filter helper')
+    fireEvent.click(screen.getByLabelText('Developer details'))
     fireEvent.click(screen.getByRole('tab', { name: 'A2A' }))
     expect(await screen.findByText('http://127.0.0.1:8766/coder/')).toBeInTheDocument()
     expect(screen.getByText('Implement a task')).toBeInTheDocument()
@@ -128,5 +133,22 @@ describe('ObservabilityView', () => {
     expect(exchanges).toHaveTextContent('orchestrator → coder_crew')
     expect(exchanges).toHaveTextContent('A2A task a2a-1')
     expect(exchanges).toHaveTextContent('one trace across A2A')
+  })
+})
+
+describe('ObservabilityView overview', () => {
+  it('opens on the overview, hides developer tabs until asked, and hides an empty Blackboard', async () => {
+    const empty = {
+      get: vi.fn(async (path: string) =>
+        path.endsWith('/tasks') ? [] : path.endsWith('/events') ? [] : { id: 'r2', title: 'Mission run', status: 'completed', strategy: null }
+      )
+    } as unknown as ApiClient
+    render(<ObservabilityView api={empty} runId="r2" />)
+
+    expect(await screen.findByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByRole('tab', { name: 'Blackboard' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Callbacks' })).toBeNull()
+    fireEvent.click(screen.getByLabelText('Developer details'))
+    expect(screen.getByRole('tab', { name: 'Callbacks' })).toBeInTheDocument()
   })
 })

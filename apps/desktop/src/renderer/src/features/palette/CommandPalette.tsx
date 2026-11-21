@@ -16,8 +16,12 @@ export function CommandPalette({ commands, onClose }: Props) {
   const list = useRef<HTMLUListElement>(null)
   const results = useMemo(() => filterCommands(commands, query), [commands, query])
 
-  useEffect(() => input.current?.focus(), [])
-  useEffect(() => setIndex(0), [query])
+  useEffect(() => {
+    input.current?.focus()
+  }, [])
+  useEffect(() => {
+    setIndex(0)
+  }, [query])
   useEffect(() => {
     list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest' })
   }, [index])

@@ -98,9 +98,17 @@ describe('MissionScreen: a running mission', () => {
     render(<MissionScreen api={makeApi()} view={makeView({ events })} />)
 
     const output = screen.getByRole('region', { name: 'Live output' })
+    // readable steps by default, each with who did it
+    expect(within(output).getByText('Writing src/filter.js')).toBeInTheDocument()
+    expect(within(output).getByText('"test" failed in 0.9 s')).toBeInTheDocument()
+    expect(within(output).getByText('Started "Filter"')).toBeInTheDocument()
+    // the raw log is one click away
+    fireEvent.click(within(output).getByRole('button', { name: 'Show raw log' }))
     expect(within(output).getByText('write_file: src/filter.js: updated')).toBeInTheDocument()
     expect(within(output).getByText('test failed (exit 1) in 0.9s')).toBeInTheDocument()
-    expect(within(output).queryByText(/Filter \(frontend\)/)).toBeNull()
+    // the team roster shows who is on it
+    const team = screen.getByRole('region', { name: 'Team' })
+    expect(within(team).getByText('Frontend')).toBeInTheDocument()
     const log = screen.getByRole('region', { name: 'Progress log' })
     expect(within(log).getByText(/Filter \(frontend\): in progress/)).toBeInTheDocument()
   })
@@ -109,7 +117,7 @@ describe('MissionScreen: a running mission', () => {
     render(
       <MissionScreen api={makeApi()} view={makeView({ connection: { state: 'reconnecting' } })} />
     )
-    expect(screen.getByText(/Nothing yet\. Tool calls/)).toBeInTheDocument()
+    expect(screen.getByText(/Nothing yet\. Each step appears/)).toBeInTheDocument()
     expect(screen.getByText('No progress yet.')).toBeInTheDocument()
     expect(screen.getByText('Reconnecting…')).toBeInTheDocument()
   })

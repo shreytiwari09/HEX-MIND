@@ -833,3 +833,23 @@
 .flow__id {
   color: var(--text-muted);
 }
+
+.observability__dev {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 0 var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.observability__overview {
+  padding: var(--space-4);
+  overflow-y: auto;
+}
+
+.observability__overview .activity {
+  max-height: none;
+}
