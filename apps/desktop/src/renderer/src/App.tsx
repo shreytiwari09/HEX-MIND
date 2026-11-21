@@ -16,9 +16,14 @@ import {
   Settings,
   type LucideIcon
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { BackendStatusPill } from './components/BackendStatusPill'
+import { BrandMark } from './components/BrandMark'
+import { StatusBar } from './components/StatusBar'
+import { useToast } from './components/Toasts'
+import { CommandPalette } from './features/palette/CommandPalette'
+import { matches, type Command } from './features/palette/commands'
 import { EmptyState, PanelHeader } from './components/Panel'
 import { ChatPanel } from './features/chat/ChatPanel'
 import { useChat } from './features/chat/useChat'
@@ -121,6 +126,104 @@ export function App() {
   const [missionsRefresh, setMissionsRefresh] = useState(0)
   const [modelsTab, setModelsTab] = useState<ModelsTab>('connections')
 
+  const toast = useToast()
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [appUrl, setAppUrl] = useState<string | null>(null)
+  const [hasModels, setHasModels] = useState<boolean | null>(null)
+  const connected = status.kind === 'connected'
+
+  // Is the project's app running? Shown in the status bar with its link.
+  useEffect(() => {
+    if (!connected || !project) {
+      setAppUrl(null)
+      return
+    }
+    let live = true
+    const check = () =>
+      api
+        .get<{ status: string; url: string | null }>(`/projects/${project.id}/app`)
+        .then((app) => live && setAppUrl(app.status === 'running' ? app.url : null))
+        .catch(() => live && setAppUrl(null))
+    void check()
+    const timer = window.setInterval(check, 10000)
+    return () => {
+      live = false
+      window.clearInterval(timer)
+    }
+  }, [api, connected, project])
+
+  // Has the user connected any model yet? Drives the first getting-started step.
+  useEffect(() => {
+    if (!connected) return
+    api
+      .get<unknown[]>('/connections')
+      .then((list) => setHasModels(list.length > 0))
+      .catch(() => setHasModels(null))
+  }, [api, connected, view])
+
+  useEffect(() => {
+    if (workspace.error) toast(`Could not open the folder: ${workspace.error}`, 'error')
+  }, [workspace.error, toast])
+
+  const startMission = () => {
+    setView('missions')
+    setSelectedMissionId(null)
+    setCreatingMission(true)
+  }
+  const askChat = (content: string, notice: string) => {
+    setRightOpen(true)
+    toast(notice, 'info')
+    void chat.send(content, 'auto')
+  }
+
+  const commands = useMemo<Command[]>(() => {
+    const list: Command[] = [
+      ...VIEWS.map((v, i) => ({
+        id: `view-${v.id}`,
+        title: `Go to ${v.label}`,
+        group: 'Views',
+        shortcut: i < 9 ? `Mod+${i + 1}` : undefined,
+        run: () => setView(v.id)
+      })),
+      { id: 'open-folder', title: 'Open folder…', group: 'Project', shortcut: 'Mod+O', disabled: !connected, run: () => void workspace.pickAndOpen() },
+      { id: 'new-mission', title: 'New mission', group: 'Project', keywords: 'build idea plan', disabled: !project, run: startMission },
+      { id: 'run-app', title: 'Run the app and get a link', group: 'Project', keywords: 'start launch preview localhost', disabled: !project, run: () => askChat('run it', 'Starting the app in the sandbox…') },
+      { id: 'stop-app', title: 'Stop the app', group: 'Project', disabled: !project || !appUrl, run: () => askChat('stop the app', 'Stopping the app…') },
+      { id: 'terminal', title: 'Open terminal in the sandbox', group: 'Project', keywords: 'shell console', disabled: !project, run: () => askChat('open terminal', 'Opening a terminal in the project sandbox…') },
+      { id: 'new-chat', title: 'New conversation', group: 'Chat', disabled: !project, run: () => { setRightOpen(true); chat.startNew() } },
+      { id: 'toggle-chat', title: 'Toggle chat panel', group: 'Layout', shortcut: 'Mod+L', run: () => setRightOpen((o) => !o) },
+      { id: 'toggle-bottom', title: 'Toggle bottom panel', group: 'Layout', shortcut: 'Mod+J', run: () => setBottomOpen((o) => !o) },
+      { id: 'settings', title: 'Open settings', group: 'Layout', shortcut: 'Mod+,', run: () => setView('settings') },
+      ...workspace.recent
+        .filter((p) => p.id !== project?.id)
+        .map((p) => ({ id: `recent-${p.id}`, title: `Open recent: ${p.name}`, group: 'Recent projects', keywords: p.workspace_path, disabled: !connected, run: () => void workspace.open(p.workspace_path) }))
+    ]
+    if (project && !project.git_enabled) {
+      list.push({ id: 'init-git', title: 'Initialize Git for this project', group: 'Project', run: () => void workspace.initGit() })
+    }
+    const order = ['Project', 'Chat', 'Recent projects', 'Views', 'Layout']
+    return list.sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, project, appUrl, workspace.recent, chat])
+
+  // Global shortcuts. ⌘K / Ctrl+K and ⌘⇧P / Ctrl+Shift+P open the palette.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (matches(event, 'Mod+K') || matches(event, 'Mod+Shift+P')) {
+        event.preventDefault()
+        setPaletteOpen((o) => !o)
+        return
+      }
+      const hit = commands.find((c) => c.shortcut && !c.disabled && matches(event, c.shortcut))
+      if (hit) {
+        event.preventDefault()
+        hit.run()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [commands])
+
   const openRun = (runId: string) => {
     setSelectedRunId(runId)
     setBottomTab('Agent Events')
@@ -140,9 +243,7 @@ export function App() {
     <div className="app" data-right={rightOpen} data-bottom={bottomOpen}>
       <header className="topbar">
         <div className="topbar__brand">
-          <span className="brand-mark" aria-hidden="true">
-            HX
-          </span>
+          <BrandMark />
           <span className="brand-name">H.E.X Mind</span>
           <span className="topbar__divider" aria-hidden="true" />
           <span className="topbar__workspace" title={project?.workspace_path}>
@@ -436,7 +537,13 @@ export function App() {
         ) : project && editor.state.tabs.length > 0 ? (
           <EditorArea projectId={project.id} editor={editor} />
         ) : (
-          <Welcome status={status} workspace={workspace} />
+          <Welcome
+            status={status}
+            workspace={workspace}
+            hasModels={hasModels}
+            onOpenModels={() => setView('models')}
+            onStartMission={startMission}
+          />
         )}
       </main>
 
@@ -479,6 +586,9 @@ export function App() {
           </div>
         </section>
       )}
+
+      <StatusBar status={status} project={project} appUrl={appUrl} onOpenPalette={() => setPaletteOpen(true)} />
+      {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
     </div>
   )
 }

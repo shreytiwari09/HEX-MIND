@@ -36,11 +36,12 @@ button {
   display: grid;
   height: 100%;
   grid-template-columns: var(--activitybar-width) var(--sidebar-width) minmax(0, 1fr) var(--rightpanel-width);
-  grid-template-rows: var(--topbar-height) minmax(0, 1fr) var(--bottompanel-height);
+  grid-template-rows: var(--topbar-height) minmax(0, 1fr) var(--bottompanel-height) var(--statusbar-height);
   grid-template-areas:
     'top top top top'
     'activity sidebar editor right'
-    'activity sidebar bottom right';
+    'activity sidebar bottom right'
+    'status status status status';
 }
 
 .app[data-right='false'] {
@@ -48,7 +49,7 @@ button {
 }
 
 .app[data-bottom='false'] {
-  grid-template-rows: var(--topbar-height) minmax(0, 1fr) 0;
+  grid-template-rows: var(--topbar-height) minmax(0, 1fr) 0 var(--statusbar-height);
 }
 
 .topbar {
@@ -69,16 +70,8 @@ button {
 }
 
 .brand-mark {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: var(--radius-sm);
-  background: var(--accent);
-  color: var(--accent-contrast);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
+  display: block;
+  flex: none;
 }
 
 .brand-name {

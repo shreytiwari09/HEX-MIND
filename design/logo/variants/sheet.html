@@ -1,0 +1,15 @@
+<html><body style="margin:0;font-family:-apple-system;background:#fff">
+<div id=w style="display:grid;grid-template-columns:repeat(4,1fr);">
+</div>
+<script>
+const names=["a-hive-h","b-honeycomb","c-network","d-prompt"];
+const w=document.getElementById('w');
+for(const n of names){
+ const c=document.createElement('div');c.style.cssText="padding:16px;border-right:1px solid #ddd";
+ c.innerHTML=`<div style="font:600 14px -apple-system">${n}</div>
+ <div style="background:#0f1115;padding:12px;display:flex;gap:14px;align-items:center;margin:8px 0">
+ <img src="${n}.svg" width=120><img src="${n}.svg" width=48><img src="${n}.svg" width=32><img src="${n}.svg" width=16></div>
+ <div style="background:#f4f4f6;padding:12px;display:flex;gap:14px;align-items:center">
+ <img src="${n}.svg" width=120><img src="${n}-mono.svg" width=48><img src="${n}-mono.svg" width=32><img src="${n}-mono.svg" width=16></div>`;
+ w.appendChild(c);}
+</script></body></html>

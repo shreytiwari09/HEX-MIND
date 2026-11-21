@@ -59,14 +59,19 @@
   --sidebar-width: 260px;
   --rightpanel-width: 360px;
   --bottompanel-height: 200px;
+  --statusbar-height: 24px;
 
   /* Motion */
   --duration-fast: 120ms;
+  --duration-medium: 200ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --shadow-overlay: 0 16px 48px rgb(0 0 0 / 45%), 0 2px 8px rgb(0 0 0 / 30%);
   --focus-ring: 0 0 0 2px var(--accent);
 }
 
 @media (prefers-reduced-motion: reduce) {
   :root {
     --duration-fast: 0ms;
+    --duration-medium: 0ms;
   }
 }

@@ -1,0 +1,439 @@
+/* Shell polish: status bar, command palette, toasts, keyboard hints, welcome, browser surfaces. */
+
+/* ---------- Browser surfaces ---------- */
+
+::selection {
+  background: rgb(109 115 242 / 35%);
+  color: var(--text);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: var(--radius-pill);
+  background: var(--border-strong) padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--text-faint);
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+input,
+textarea {
+  caret-color: var(--accent-hover);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------- Keyboard hints ---------- */
+
+.kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  line-height: 1;
+}
+
+.kbd + .kbd {
+  margin-left: 2px;
+}
+
+.kbd--quiet {
+  border-color: transparent;
+  background: transparent;
+}
+
+.kbd--on-accent {
+  border-color: rgb(255 255 255 / 25%);
+  background: rgb(255 255 255 / 12%);
+  color: var(--accent-contrast);
+}
+
+/* ---------- Status bar ---------- */
+
+.statusbar {
+  grid-area: status;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 0 var(--space-2);
+  border-top: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.statusbar__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  text-decoration: none;
+}
+
+.statusbar__spacer {
+  flex: 1;
+}
+
+.statusbar__muted {
+  color: var(--text-faint);
+}
+
+.statusbar__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--text-faint);
+}
+
+.statusbar__item[data-state='connected'] .statusbar__dot {
+  background: var(--success);
+}
+
+.statusbar__item[data-state='connecting'] .statusbar__dot {
+  background: var(--warning);
+}
+
+.statusbar__item[data-state='unreachable'] .statusbar__dot,
+.statusbar__item[data-state='unauthorized'] .statusbar__dot,
+.statusbar__item[data-state='misconfigured'] .statusbar__dot {
+  background: var(--danger);
+}
+
+.statusbar__dot--live {
+  background: var(--success);
+  box-shadow: 0 0 0 3px rgb(63 182 122 / 20%);
+}
+
+.statusbar__link,
+.statusbar__button {
+  cursor: pointer;
+}
+
+.statusbar__link:hover,
+.statusbar__button:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+/* ---------- Command palette ---------- */
+
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: center;
+  padding-top: 14vh;
+  background: rgb(5 6 9 / 55%);
+  animation: fade-in var(--duration-medium) var(--ease-out);
+}
+
+.palette {
+  display: flex;
+  flex-direction: column;
+  width: min(620px, calc(100vw - 32px));
+  max-height: min(480px, 70vh);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface-1);
+  box-shadow: var(--shadow-overlay);
+  animation: palette-in var(--duration-medium) var(--ease-out);
+}
+
+.palette__search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-faint);
+}
+
+.palette__input {
+  flex: 1;
+  height: 48px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  outline: none;
+}
+
+.palette__input::placeholder {
+  color: var(--text-faint);
+}
+
+.palette__results {
+  flex: 1;
+  margin: 0;
+  padding: var(--space-1) var(--space-2) var(--space-2);
+  overflow-y: auto;
+  list-style: none;
+}
+
+.palette__group {
+  padding: var(--space-3) var(--space-2) var(--space-1);
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.palette__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 34px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.palette__item[aria-selected='true'] {
+  background: var(--accent-soft);
+}
+
+.palette__item[aria-disabled='true'] {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+.palette__title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.palette__meta {
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+}
+
+.palette__enter {
+  color: var(--accent-hover);
+}
+
+.palette__empty {
+  padding: var(--space-6) var(--space-2);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.palette__footer {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+}
+
+.palette__footer span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ---------- Toasts ---------- */
+
+.toasts {
+  position: fixed;
+  right: var(--space-4);
+  bottom: calc(var(--statusbar-height) + var(--space-3));
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: min(380px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-2);
+  box-shadow: var(--shadow-overlay);
+  font-size: var(--text-sm);
+  pointer-events: auto;
+  animation: toast-in var(--duration-medium) var(--ease-out);
+}
+
+.toast__icon {
+  flex: none;
+  margin-top: 1px;
+  color: var(--info);
+}
+
+.toast[data-kind='success'] .toast__icon {
+  color: var(--success);
+}
+
+.toast[data-kind='error'] .toast__icon {
+  color: var(--danger);
+}
+
+.toast__text {
+  flex: 1;
+  line-height: 1.45;
+}
+
+.toast__close {
+  margin: -4px -4px -4px 0;
+}
+
+/* ---------- Welcome ---------- */
+
+.welcome {
+  max-width: 600px;
+  margin: 9vh auto var(--space-8);
+}
+
+.welcome__hero {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.welcome__hero .welcome__subtitle {
+  margin: var(--space-1) 0 0;
+  max-width: 52ch;
+  line-height: 1.5;
+}
+
+.welcome__actions {
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.welcome__hint {
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+}
+
+.steps {
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  list-style: none;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.step + .step {
+  border-top: 1px solid var(--border);
+}
+
+.step__marker {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.step[data-done='true'] .step__marker {
+  border-color: transparent;
+  background: rgb(63 182 122 / 16%);
+  color: var(--success);
+}
+
+.step__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.step__title {
+  font-weight: 600;
+}
+
+.step[data-done='true'] .step__title {
+  color: var(--text-muted);
+}
+
+.step__text {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+/* ---------- Motion ---------- */
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes palette-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
