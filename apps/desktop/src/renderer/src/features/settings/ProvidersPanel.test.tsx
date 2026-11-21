@@ -41,7 +41,7 @@ describe('ProvidersPanel', () => {
     expect(screen.getByText('Skipped for 240s: quota exhausted')).toBeInTheDocument()
     expect(screen.getByText('requests: 0')).toBeInTheDocument()
     expect(screen.getByText('no API key (set HEXMIND_GEMINI_API_KEY)')).toBeInTheDocument()
-    expect(screen.getByText('Ready')).toBeInTheDocument()
+    expect(screen.getByText('Key set')).toBeInTheDocument()
   })
 
   it('runs a provider test and shows the real result', async () => {
@@ -57,5 +57,16 @@ describe('ProvidersPanel', () => {
     fireEvent.click(buttons[0])
     expect(await screen.findByText('OK in 2.3s (“ready”)')).toBeInTheDocument()
     expect(post).toHaveBeenCalledWith('/providers/ollama/test')
+  })
+
+  it('says it is the fallback and opens Models & Keys', async () => {
+    const onOpenModels = vi.fn()
+    const api = { get: vi.fn().mockResolvedValue(INFO), post: vi.fn(), put: vi.fn() } as unknown as ApiClient
+    render(<ProvidersPanel api={api} onOpenModels={onOpenModels} />)
+
+    expect(await screen.findByText('Fallback models')).toBeInTheDocument()
+    expect(screen.getByText(/Used only by team members with no model chosen/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Open Models & Keys' }))
+    expect(onOpenModels).toHaveBeenCalledTimes(1)
   })
 })

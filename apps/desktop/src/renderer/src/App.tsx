@@ -255,7 +255,7 @@ export function App() {
           <>
             <PanelHeader title={viewLabel} />
             {view === 'settings' ? (
-              <ProvidersPanel api={api} />
+              <ProvidersPanel api={api} onOpenModels={() => setView('models')} />
             ) : view === 'models' ? (
               <nav className="mission-list" aria-label="Models and keys sections">
                 {(['connections', 'team'] as const).map((tab) => (

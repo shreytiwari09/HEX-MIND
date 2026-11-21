@@ -7,11 +7,14 @@ import { PROVIDER_LABELS } from '../workspace/Welcome'
 
 interface Props {
   api: ApiClient
+  /** Opens Models & Keys, where connections (NVIDIA, OpenRouter, any OpenAI-compatible key…) live. */
+  onOpenModels?: () => void
 }
 
-/** Model providers: policy order, health, quota cooldowns and a one-call connectivity test.
- * API keys are configured in the backend .env and never shown here. */
-export function ProvidersPanel({ api }: Props) {
+/** The fallback providers (Groq, Gemini, Ollama from `.env`): policy order, health, quota cooldowns
+ * and a one-call test. They serve only team members with no model chosen in Models & Keys, where
+ * every other connection lives. Keys are never shown here. */
+export function ProvidersPanel({ api, onOpenModels }: Props) {
   const [info, setInfo] = useState<ProvidersInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tests, setTests] = useState<Record<string, LlmTestResult | 'running'>>({})
@@ -47,7 +50,7 @@ export function ProvidersPanel({ api }: Props) {
   return (
     <>
       <PanelHeader
-        title="Model providers"
+        title="Fallback models"
         actions={
           <button type="button" className="icon-button" aria-label="Refresh providers" title="Refresh" onClick={() => void load()}>
             <RefreshCw size={14} />
@@ -60,6 +63,15 @@ export function ProvidersPanel({ api }: Props) {
         <EmptyState title="Loading…" />
       ) : (
         <div className="providers">
+          <p className="providers__hint">
+            Used only by team members with no model chosen. Your connections (NVIDIA, Token Harbor,
+            OpenRouter and any other key) and each member&apos;s models are in <strong>Models &amp; Keys</strong>.
+          </p>
+          {onOpenModels && (
+            <button type="button" className="button button--small" onClick={onOpenModels}>
+              Open Models &amp; Keys
+            </button>
+          )}
           <p className="providers__order">
             Order: {info.order.map((n) => PROVIDER_LABELS[n] ?? n).join(' → ')}
           </p>
@@ -75,7 +87,7 @@ export function ProvidersPanel({ api }: Props) {
                     <span className="provider__model mono">{p.health.model}</span>
                   </div>
                   <div className="provider__detail">
-                    {state === 'ready' && 'Ready'}
+                    {state === 'ready' && 'Key set'}
                     {state === 'missing' && (p.health.detail ?? 'Not configured')}
                     {state === 'down' && (p.health.detail ?? 'Unavailable')}
                     {state === 'cooldown' && `Skipped for ${p.cooldown_s}s: ${p.cooldown_reason}`}
@@ -110,8 +122,11 @@ export function ProvidersPanel({ api }: Props) {
             })}
           </ul>
           <p className="providers__hint">
-            Add API keys as <code>HEXMIND_GROQ_API_KEY</code> / <code>HEXMIND_GEMINI_API_KEY</code> in the
-            project <code>.env</code> and restart the backend. Keys are never shown in the app.
+            &ldquo;Key set&rdquo; means a key is there, not that it has allowance left: a daily limit shows
+            up only after a call is refused, as &ldquo;Skipped for …&rdquo;. These keys come from{' '}
+            <code>HEXMIND_GROQ_API_KEY</code> / <code>HEXMIND_GEMINI_API_KEY</code> in the project{' '}
+            <code>.env</code> (restart the backend after changing them); to add any other key, use Models
+            &amp; Keys. Keys are never shown in the app.
           </p>
         </div>
       )}
