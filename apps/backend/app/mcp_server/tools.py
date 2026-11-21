@@ -18,6 +18,7 @@ from app.guardrails.injection import mark
 from app.sandbox.image import DockerfileError, ensure_project_image
 from app.sandbox.profile import load_profile
 from app.sandbox.runner import run_check as sandbox_run_check
+from app.sandbox.runner import timeout_for
 from app.skills.registry import SkillError, SkillRegistry, read_skill_file
 from app.workspace import git
 from app.workspace.paths import resolve_in_workspace
@@ -180,7 +181,7 @@ class WorkspaceTools:
             command=command,
             image=image,
             worktree=self.root,
-            timeout_s=self.check_timeout_s,
+            timeout_s=timeout_for(name, self.check_timeout_s),
             network=profile.network_for(name),
         )
         return json.dumps(asdict(outcome))
@@ -345,7 +346,9 @@ class WorkspaceTools:
             raise ToolError(f"skill '{name}' is not available to you; yours are: {yours}")
         try:
             skill = self.skills.get(name)
-            if file:
+            # Models ask for the skill's own file by name ("SKILL.md", "README.md"): that is the
+            # skill itself, not one of its extra files (live run, D77).
+            if file and file.strip().lstrip("./").lower() not in ("skill.md", "readme.md"):
                 return read_skill_file(skill, file)
         except SkillError as exc:
             raise ToolError(str(exc)) from None

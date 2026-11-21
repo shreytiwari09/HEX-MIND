@@ -32,6 +32,16 @@ DEFAULT_INSTALL_HOSTS = (
     "sum.golang.org",
 )
 INSTALL_NETWORK = "hexmind-install"  # a Docker --internal network: no route out
+# Installs (npm, pip) download and build: a Python app with Streamlit took longer than the 120 s
+# every other check gets (live run, D77).
+INSTALL_TIMEOUT_S = 600
+ACCEPTANCE_TESTS = "tests/acceptance"  # QA's tests (PRD §8.5)
+
+
+def timeout_for(name: str, default_s: int) -> int:
+    return max(default_s, INSTALL_TIMEOUT_S) if name == "install" else default_s
+
+
 TAG_PREFIX = "hexmind-project"  # images built from a project's .hex/Dockerfile
 PROXY_IMAGE = "python:3.11-slim"
 PROXY_PORT = 3128
@@ -109,12 +119,19 @@ def docker_command(
     container_name: str,
     network: str = "none",
     proxy: str | None = None,
+    hide: Sequence[str] = (),
 ) -> list[str]:
     """`network` is "none" or the name of the internal network whose only way out is `proxy`
-    (the name of the proxy container), which the tools in the container are pointed at."""
+    (the name of the proxy container), which the tools in the container are pointed at.
+    `hide`: folders (relative to the worktree) covered by an empty one for this run."""
     proxy_env = (
         [f"--env={name}=http://{proxy}:{PROXY_PORT}" for name in _PROXY_ENV] if proxy else []
     )
+    hidden = [
+        flag
+        for rel in hide
+        for flag in ("--mount", f"type=tmpfs,target=/work/{rel.strip('/')},tmpfs-size=1m")
+    ]
     return [
         "docker", "run", "--rm",
         "--name", container_name,
@@ -123,6 +140,7 @@ def docker_command(
         "--env", "CI=1",
         *proxy_env,
         "--mount", f"type=bind,source={worktree.resolve()},target=/work",
+        *hidden,
         "--workdir", "/work",
         image,
         "sh", "-c", command,
@@ -210,7 +228,13 @@ def run_check(
     allow_hosts: Sequence[str] = DEFAULT_INSTALL_HOSTS,
 ) -> CheckOutcome:
     """Run `command` in the sandbox. `network` is "none" (the default, and always for test and
-    start) or "allowlist" (installs: package registries only, through the egress proxy)."""
+    start) or "allowlist" (installs: package registries only, through the egress proxy).
+
+    The `test` check runs without QA's acceptance tests (an empty folder covers
+    `tests/acceptance`): QA writes them for the whole milestone before its features exist, so a
+    plain `pytest` or `node --test` in an early feature would run tests of later ones and could
+    never pass (live run, D77). They are run by the `acceptance` check."""
+    hide = (ACCEPTANCE_TESTS,) if name == "test" and (worktree / ACCEPTANCE_TESTS).is_dir() else ()
     available, reason = docker_available()
     if not available:
         return CheckOutcome(name, None, 0, "", error=f"sandbox unavailable: {reason}")
@@ -229,12 +253,12 @@ def run_check(
                     name,
                     docker_command(
                         image=image, worktree=worktree, command=command,
-                        container_name=container, network=INSTALL_NETWORK, proxy=proxy,
+                        container_name=container, network=INSTALL_NETWORK, proxy=proxy, hide=hide,
                     ),
                     container, timeout_s, started,
                 )  # fmt: skip
         argv = docker_command(
-            image=image, worktree=worktree, command=command, container_name=container
+            image=image, worktree=worktree, command=command, container_name=container, hide=hide
         )
         return _run(name, argv, container, timeout_s, started)
     except (subprocess.SubprocessError, OSError) as exc:
@@ -251,9 +275,12 @@ def _run(
         )  # fmt: skip
     except subprocess.TimeoutExpired as exc:
         subprocess.run(["docker", "kill", container], capture_output=True, timeout=30)
-        output = (exc.stdout or "") + (exc.stderr or "")
-        if isinstance(output, bytes):
-            output = output.decode("utf-8", "replace")
+        # On a timeout subprocess hands back the partial output as bytes even with text=True,
+        # and stdout and stderr may differ in type: decode each before joining (live run, D77).
+        output = "".join(
+            part.decode("utf-8", "replace") if isinstance(part, bytes) else part
+            for part in (exc.stdout or "", exc.stderr or "")
+        )
         return CheckOutcome(
             name, None, _ms(started), output[-OUTPUT_TAIL_CHARS:],
             error=f"timed out after {timeout_s}s",
@@ -268,7 +295,14 @@ def _ms(started: float) -> int:
 
 # Test runners that found nothing to run: node's TAP ("# tests 0") and spec ("ℹ tests 0")
 # reporters, Python's unittest ("Ran 0 tests").
-_NO_TESTS = re.compile(r"(?m)^(?:\S+\s+)?tests 0\s*$|\bRan 0 tests\b")
+# ... and pytest ("no tests ran", exit 5; "collected 0 items").
+_NO_TESTS = re.compile(
+    r"(?m)^(?:\S+\s+)?tests 0\s*$|\bRan 0 tests\b|\bno tests ran\b|\bcollected 0 items\b"
+)
+NO_TESTS_HINT = (
+    "ran NO tests: add at least one real test file that the test command finds "
+    "(pytest: tests/test_*.py; node: *.test.js)"
+)
 
 
 # What a test runner prints after running at least one test: node's TAP and spec reporters
@@ -305,8 +339,9 @@ def check_summary(check: CheckOutcome | None) -> str:
         return "not run"
     if check.exit_code is None:
         return f"{check.name}: did not complete ({check.error})"
-    if check.passed and ran_no_tests(check):
-        status = "exited 0 but ran NO tests (add *.test.js files using node:test)"
+    if ran_no_tests(check):
+        code = "exited 0" if check.passed else f"exited {check.exit_code}"
+        status = f"{code} and {NO_TESTS_HINT}"
     elif check.passed and not shows_tests_ran(check):
         status = (
             "exited 0 but its output shows NO tests running: the test command must run a real "

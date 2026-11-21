@@ -12,9 +12,13 @@ sandbox. When you scaffold a project, always create:
   Entry points such as `index.js`, `app.py` or `main.py` may sit at the root when the stack
   expects it (Streamlit: `app.py`).
 - **Tests in `tests/`**, named the way the test runner finds them (`test_*.py`, `*.test.js`).
+  The setup itself always includes **one small test that passes** (for example
+  `tests/test_smoke.py` that imports the package): a feature is done only when the `test` check
+  runs at least one test and it passes. QA's tests in `tests/acceptance/` are not run by `test`.
 - **A dependency file** listing every package the code imports, with versions:
   Python `requirements.txt` (or `pyproject.toml`), Node `package.json`. Add a lock file when the
-  tool makes one (`package-lock.json`).
+  tool makes one (`package-lock.json`). Pin with `==` only: never write `--hash` lines or
+  checksums, which you cannot compute and which make the install fail.
 - **`.gitignore`** with at least: `.venv/`, `venv/`, `__pycache__/`, `*.pyc`, `node_modules/`,
   `dist/`, `build/`, `.env`, `.env.*`, `.DS_Store`, `.pytest_cache/`, `coverage/`.
 - **`README.md`** with: one line on what it is; how to install and run it locally, as copyable

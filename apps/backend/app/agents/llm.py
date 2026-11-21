@@ -17,7 +17,7 @@ from typing import Any
 from crewai.llms.base_llm import BaseLLM
 from pydantic import PrivateAttr
 
-from app.providers.base import ChatMessage, LLMRequest, Purpose, ToolCall
+from app.providers.base import ChatMessage, LLMRequest, LLMResult, Purpose, ToolCall
 from app.providers.router import CallContext, ProviderRouter
 
 _ROLES = {"system", "user", "assistant", "tool"}
@@ -26,6 +26,10 @@ _ROLES = {"system", "user", "assistant", "tool"}
 # for again at steps 3 to 25 (live run: ~50,000 input tokens to write one 60-line file). Results
 # older than the last KEEP_RECENT_MESSAGES messages are cut to their first OLD_RESULT_CHARS
 # characters; the agent can call the tool again if it needs the rest.
+FINAL_ANSWER_NOW = (
+    "No tools are available at this step. Give your final answer now, as text only, in the "
+    "format the task asked for. Do not call any tool."
+)
 KEEP_RECENT_MESSAGES = 8
 OLD_RESULT_CHARS = 300
 _SHORTENED = "[older result shortened"
@@ -91,12 +95,36 @@ class HexLLM(BaseLLM):
         result = future.result()
         if not result.ok:
             raise ProviderCallFailed(f"{result.provider} call failed: {result.error}")
+        if result.tool_calls and not native:
+            # No tools were offered: the framework wants the final answer as text. A model that
+            # still answers with tool calls (free DeepSeek did, D77) is asked once, plainly, for
+            # the text; a list here would fail the whole attempt.
+            result = self._ask_for_text(request)
+            return truncate_at_stop(result.content or "", stop)
         if result.tool_calls:
             for call in result.tool_calls:
                 if call.extra:
                     self._call_extras[call.id] = call.extra
             return [to_crewai_tool_call(call) for call in result.tool_calls]
         return truncate_at_stop(result.content or "", stop)
+
+    def _ask_for_text(self, request: LLMRequest) -> LLMResult:
+        again = request.model_copy(
+            update={
+                "messages": [
+                    *request.messages,
+                    ChatMessage(role="user", content=FINAL_ANSWER_NOW),
+                ],
+                "tools": None,
+            }
+        )
+        future = asyncio.run_coroutine_threadsafe(
+            self._router.complete(again, self._ctx), self._loop
+        )
+        result = future.result()
+        if not result.ok:
+            raise ProviderCallFailed(f"{result.provider} call failed: {result.error}")
+        return result
 
     def supports_function_calling(self) -> bool:
         return self._native_tools
