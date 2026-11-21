@@ -1,21 +1,20 @@
 import { join } from 'node:path'
 
-import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell, type IpcMainInvokeEvent } from 'electron'
 
 import { IPC, type AppInfo, type BackendConfig } from '../preload/api'
+import { APP_ORIGIN, APP_SCHEME, fileUrl, resolveAppFile } from './appProtocol'
+import { envFiles, loadEnvFiles } from './connection'
 import { openableInBrowser } from './links'
 
 /** Set by electron-vite while running `electron-vite dev`. */
 const devServerUrl = process.env['ELECTRON_RENDERER_URL']
 
 function loadRootEnv(): void {
-  // In development the backend and the desktop app share the repository-root .env.
-  // The packaged app will generate a per-session token instead (milestone M8).
-  try {
-    process.loadEnvFile(join(app.getAppPath(), '..', '..', '.env'))
-  } catch {
-    // No .env file: the renderer shows a "not configured" state.
-  }
+  // From source the backend and the desktop app share the repository-root .env; the
+  // installed app reads the connection file `npm run setup` writes (port and token only).
+  // process.loadEnvFile never overrides a variable that is already set, so the first wins.
+  loadEnvFiles(envFiles(app.getAppPath(), app.getPath('appData')))
 }
 
 function backendConfig(): BackendConfig {
@@ -25,7 +24,7 @@ function backendConfig(): BackendConfig {
 
 function isAppUrl(url: string): boolean {
   if (devServerUrl) return url.startsWith(devServerUrl)
-  return url.startsWith('file://')
+  return url.startsWith(`${APP_ORIGIN}/`)
 }
 
 /** Only our own renderer may call privileged IPC handlers. */
@@ -88,13 +87,28 @@ function createWindow(): void {
   if (devServerUrl) {
     void win.loadURL(devServerUrl)
   } else {
-    void win.loadFile(join(__dirname, '../renderer/index.html'))
+    void win.loadURL(`${APP_ORIGIN}/index.html`)
   }
 }
 
 loadRootEnv()
 
+// Must run before the app is ready. "standard" gives app:// pages a real origin.
+protocol.registerSchemesAsPrivileged([
+  { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }
+])
+
+function serveRenderer(): void {
+  const root = join(__dirname, '../renderer')
+  protocol.handle(APP_SCHEME, (request) => {
+    const file = resolveAppFile(root, request.url)
+    if (!file) return new Response('Not found', { status: 404 })
+    return net.fetch(fileUrl(file))
+  })
+}
+
 app.whenReady().then(() => {
+  if (!devServerUrl) serveRenderer()
   registerIpc()
   createWindow()
   app.on('activate', () => {

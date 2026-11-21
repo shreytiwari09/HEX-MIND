@@ -2,11 +2,15 @@
   "name": "hex-mind",
   "version": "0.1.0",
   "private": true,
-  "description": "H.E.X Mind (Hivemind Execution X): an agent-native IDE with live multi-agent observability",
+  "description": "H.E.X Mind: a team of AI agents (PM, engineers, QA, security) that builds software from your idea, on your computer",
   "workspaces": [
     "apps/desktop"
   ],
   "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "start": "node scripts/start.mjs",
+    "backend": "node scripts/start.mjs --backend-only",
+    "package": "npm run package -w @hexmind/desktop",
     "postinstall": "node -e \"const f='./node_modules/electron/install.js';require('fs').existsSync(f)&&require(f)\"",
     "dev": "npm run dev -w @hexmind/desktop",
     "dev:backend": "uv --directory apps/backend run python -m app",
@@ -18,5 +22,9 @@
     "test": "npm run test -w @hexmind/desktop && npm run test:backend",
     "test:backend": "uv --directory apps/backend run pytest -q",
     "lint:backend": "uv --directory apps/backend run ruff check . && uv --directory apps/backend run ruff format --check ."
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.12"
   }
 }

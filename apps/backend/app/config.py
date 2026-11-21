@@ -19,6 +19,9 @@ DEFAULT_DATA_DIR = (
 )
 
 
+INSTALLED_APP_ORIGIN = "app://hexmind"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="HEXMIND_", env_file=ROOT_ENV_FILE, extra="ignore")
 
@@ -26,6 +29,13 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8765
     cors_origins: list[str] = ["http://localhost:5173"]
+
+    @field_validator("cors_origins")
+    @classmethod
+    def _installed_app_origin(cls, value: list[str]) -> list[str]:
+        """The installed desktop app serves its screens from app://hexmind (PRD D80); it is
+        always allowed, so an older .env listing only the dev server keeps working."""
+        return value if INSTALLED_APP_ORIGIN in value else [*value, INSTALLED_APP_ORIGIN]
 
     database_url: str = "postgresql+asyncpg://hexmind:hexmind@127.0.0.1:5433/hexmind"
 

@@ -9,7 +9,8 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "package": "electron-vite build && electron-builder --config electron-builder.yml"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
@@ -28,11 +29,14 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "electron": "^45.0.0",
+    "electron-builder": "26.18.1",
     "electron-vite": "^6.0.0",
     "jsdom": "^29.1.1",
     "json-schema-to-typescript": "^16.0.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"
-  }
+  },
+  "author": "Shrey Tiwari",
+  "homepage": "https://github.com/shreytiwari09/HEX-MIND"
 }

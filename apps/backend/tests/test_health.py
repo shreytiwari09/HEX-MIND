@@ -50,6 +50,16 @@ async def test_cors_preflight_allows_renderer_origin(client: httpx.AsyncClient) 
     assert response.headers["access-control-allow-origin"] == ORIGIN
 
 
+async def test_cors_allows_the_installed_app_and_never_the_null_origin(
+    client: httpx.AsyncClient,
+) -> None:
+    app_origin = await client.get("/api/health", headers={"Origin": "app://hexmind"})
+    null_origin = await client.get("/api/health", headers={"Origin": "null"})
+
+    assert app_origin.headers["access-control-allow-origin"] == "app://hexmind"
+    assert "access-control-allow-origin" not in null_origin.headers
+
+
 async def test_cors_rejects_unknown_origin(client: httpx.AsyncClient) -> None:
     response = await client.get("/api/health", headers={"Origin": "https://evil.example"})
     assert "access-control-allow-origin" not in response.headers
