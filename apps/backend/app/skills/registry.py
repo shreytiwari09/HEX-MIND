@@ -22,7 +22,8 @@ import yaml
 
 BUILTIN_DIR = Path(__file__).parent / "builtin"
 NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]{1,63}$")
-MAX_SKILL_MD_BYTES = 20_000
+# Raised from 20 KB (D70): popular Claude/Codex skills (e.g. `unslop`) are about 32 KB.
+MAX_SKILL_MD_BYTES = 50_000
 MAX_FILE_BYTES = 50_000
 MAX_FILES = 20
 MAX_DESCRIPTION = 200

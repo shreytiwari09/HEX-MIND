@@ -102,6 +102,8 @@ class PreviewOut(BaseModel):
     signals: list[str]
     # "user" or "builtin" if a skill with this name exists: installing replaces/overrides it.
     exists: str | None
+    # Roughly what loading the skill adds to an agent's request (4 characters a token).
+    approx_tokens: int
 
 
 async def _fetch(request: Request, url: str, commit: str | None = None) -> github.Fetched:
@@ -132,6 +134,7 @@ async def preview_github_skill(
         commit=fetched.commit,
         signals=list(fetched.signals),
         exists=existing.source if existing else None,
+        approx_tokens=len(fetched.body) // 4,
     )
 
 

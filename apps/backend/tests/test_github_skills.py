@@ -135,6 +135,8 @@ async def test_a_preview_shows_the_skill_pinned_to_a_commit_and_stores_nothing(
     assert body["body"] == "Use transitions." and body["files"] == ["examples/spin.md"]
     assert body["commit"] == COMMIT and body["url"] == URL and body["signals"] == []
     assert body["version"] == f"motion-graphics@{body['hash'][:12]}" and body["exists"] is None
+    # what loading it adds to an agent's request, estimated at 4 characters a token (D70)
+    assert body["approx_tokens"] == len("Use transitions.") // 4
     assert not skills_dir(app).exists() or not any(skills_dir(app).iterdir())  # nothing stored
 
 
@@ -216,8 +218,8 @@ async def test_a_preview_says_when_a_skill_with_that_name_already_exists(
         ),
         (lambda g: g.files.update({"skills/motion/SKILL.md": b"\xff\xfe\x00bad"}), "not UTF-8"),
         (
-            lambda g: g.files.update({"skills/motion/SKILL.md": {"size": 30_000, "sha": "1" * 40}}),
-            "larger than 20 KB",
+            lambda g: g.files.update({"skills/motion/SKILL.md": {"size": 60_000, "sha": "1" * 40}}),
+            "larger than 50 KB",
         ),
         (lambda g: setattr(g, "truncated", True), "too large to read a folder"),
         (

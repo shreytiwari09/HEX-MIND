@@ -115,7 +115,7 @@ def test_edits_apply_to_the_next_job_and_change_the_version(tmp_path: Path) -> N
         (lambda r: make_skill(r, "x-body", body="   "), "instructions are empty"),
         (lambda r: make_skill(r, "x-desc", description="  "), "a description is required"),
         (lambda r: make_skill(r, "x-long", description="d" * 201), "longer than 200"),
-        (lambda r: make_skill(r, "x-huge", body="b" * 21_000), "larger than 20 KB"),
+        (lambda r: make_skill(r, "x-huge", body="b" * 51_000), "larger than 50 KB"),
         (lambda r: (make_skill(r, "x-name").joinpath("SKILL.md").write_text(
             "---\nname: other\ndescription: d\n---\nbody\n")), "must match the folder name"),
         (lambda r: (make_skill(r, "x-front").joinpath("SKILL.md").write_text("just text")),
@@ -385,3 +385,10 @@ async def test_the_skills_api_lists_sources_versions_owners_and_problems(
     ]
     assert by_name["rest-api"]["version"].startswith("rest-api@")
     assert body["problems"] == {"broken": "broken: there is no SKILL.md"}
+
+
+def test_a_skill_up_to_50_kb_is_accepted(tmp_path) -> None:
+    """Raised from 20 KB (D70): popular Claude/Codex skills such as `unslop` are about 32 KB."""
+    make_skill(tmp_path, "big", body="b" * 32_000)
+
+    assert SkillRegistry(tmp_path).get("big").name == "big"

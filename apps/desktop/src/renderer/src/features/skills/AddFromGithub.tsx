@@ -5,6 +5,9 @@ import type { GithubPreview, SkillInfo } from '../agents/types'
 import type { TeamData } from '../agents/useTeam'
 import { describeError } from '../missions/actions'
 
+/** Above this a skill is called big in the preview (D70): it may not fit small free-plan limits. */
+const BIG_SKILL_TOKENS = 5000
+
 interface Props {
   api: ApiClient
   team: TeamData
@@ -93,6 +96,13 @@ export function AddFromGithub({ api, team, onInstalled, onCancel }: Props) {
             Pinned to commit <code>{preview.commit.slice(0, 10)}</code> of {preview.url}
             {preview.files.length > 0 && ` · also contains ${preview.files.join(', ')}`}
           </p>
+          {preview.approx_tokens !== undefined && (
+            <p className={preview.approx_tokens > BIG_SKILL_TOKENS ? 'mission__error' : 'mission__muted'}>
+              About {preview.approx_tokens.toLocaleString('en-US')} tokens each time an agent loads it.
+              {preview.approx_tokens > BIG_SKILL_TOKENS &&
+                ' That is big: models with small limits (Groq’s free plan allows 8,000 tokens a minute) may not handle it, and every step costs more.'}
+            </p>
+          )}
           {preview.signals.length > 0 && (
             <p role="alert" className="mission__error">
               Be careful: this text looks like it is trying to give orders to an AI ({preview.signals.join(', ')}).

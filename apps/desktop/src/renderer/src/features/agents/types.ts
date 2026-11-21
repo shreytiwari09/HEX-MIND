@@ -44,6 +44,8 @@ export interface GithubPreview {
   signals: string[]
   /** A skill with this name already exists: 'user' (it would be replaced) or 'builtin' (overridden). */
   exists: 'user' | 'builtin' | null
+  /** Roughly what loading the skill adds to an agent's request (4 characters a token). */
+  approx_tokens?: number
 }
 
 export interface SkillsResponse {
