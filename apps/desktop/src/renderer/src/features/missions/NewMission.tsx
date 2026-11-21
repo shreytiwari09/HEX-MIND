@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import type { ApiClient } from '../../lib/api'
 import { SearchKeyPanel, type SearchStatus } from '../settings/SearchKeyPanel'
 import { describeError } from './actions'
+import { planningState } from './planning'
 import { Scoping } from './Scoping'
 import type { Mission, ScopingSession } from './types'
 
@@ -52,11 +53,37 @@ interface Props {
   projectId: string
   onCreated: (mission: Mission) => void
   onCancel: () => void
+  /** Reopen an idea that is being planned (picked from the missions list). */
+  initialSessionId?: string | null
 }
 
+const THINKING_POLL_MS = 4000
+
 /** Describe the idea; the PM scopes it with you and proposes a plan. */
-export function NewMission({ api, projectId, onCreated, onCancel }: Props) {
+export function NewMission({ api, projectId, onCreated, onCancel, initialSessionId }: Props) {
   const [session, setSession] = useState<ScopingSession | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  // Reopen a session from the list, then keep it fresh while the PM is still working on it
+  // (it answers in the background, so leaving this screen never loses the idea).
+  useEffect(() => {
+    if (!initialSessionId) return
+    api
+      .get<ScopingSession>(`/scoping/${initialSessionId}`)
+      .then(setSession)
+      .catch((err: unknown) => setLoadError(describeError(err).message))
+  }, [api, initialSessionId])
+  const thinking = session !== null && planningState(session) === 'thinking'
+  useEffect(() => {
+    if (!thinking || !session) return
+    const timer = window.setInterval(() => {
+      api
+        .get<ScopingSession>(`/scoping/${session.id}`)
+        .then(setSession)
+        .catch(() => {})
+    }, THINKING_POLL_MS)
+    return () => window.clearInterval(timer)
+  }, [api, thinking, session?.id])
   const [idea, setIdea] = useState('')
   const [budget, setBudget] = useState('')
   const [variantId, setVariantId] = useState('')
@@ -80,8 +107,14 @@ export function NewMission({ api, projectId, onCreated, onCancel }: Props) {
   if (own) {
     return <PlanJsonForm api={api} projectId={projectId} onCreated={onCreated} onCancel={() => setOwn(false)} />
   }
+  if (session && thinking) {
+    return <PmWorking idea={session.idea} />
+  }
   if (session) {
     return <Scoping api={api} session={session} onSession={setSession} onCreated={onCreated} onClose={onCancel} />
+  }
+  if (initialSessionId && !loadError) {
+    return <p className="mission__muted new-mission">Loading…</p>
   }
 
   const start = async (event: React.FormEvent) => {
@@ -126,6 +159,7 @@ export function NewMission({ api, projectId, onCreated, onCancel }: Props) {
           required
           minLength={3}
           value={idea}
+          disabled={busy}
           onChange={(event) => setIdea(event.target.value)}
           placeholder="A todo list with filters"
         />
@@ -190,8 +224,16 @@ export function NewMission({ api, projectId, onCreated, onCancel }: Props) {
         </p>
       )}
       {busy && (
-        <p role="status" className="mission__muted">
-          The PM is reading your idea…
+        <p role="status" className="new-mission__working">
+          <span className="spinner" aria-hidden="true" />
+          The PM is reading your idea and preparing questions or a plan. On free models this can take one to three
+          minutes. You can leave this screen: the idea stays under <strong>Being planned</strong> in the list, and
+          every step shows live in <strong>Agent Events</strong> below.
+        </p>
+      )}
+      {loadError && (
+        <p role="alert" className="mission__error">
+          {loadError}
         </p>
       )}
       <div className="new-mission__actions">
@@ -219,6 +261,21 @@ export function NewMission({ api, projectId, onCreated, onCancel }: Props) {
         </button>
       </div>
     </form>
+  )
+}
+
+/** Shown while the PM works on an idea, before its first answer. */
+function PmWorking({ idea }: { idea: string }) {
+  return (
+    <section className="new-mission" aria-label="Scoping">
+      <h2 className="mission__title">Scoping with the PM</h2>
+      <p className="mission__muted">{idea}</p>
+      <p role="status" className="new-mission__working">
+        <span className="spinner" aria-hidden="true" />
+        The PM is reading your idea and preparing questions or a plan. On free models this can take one to three
+        minutes. This page updates by itself; every step shows live in <strong>Agent Events</strong> below.
+      </p>
+    </section>
   )
 }
 

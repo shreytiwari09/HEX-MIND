@@ -102,6 +102,7 @@ export function App() {
   const [diffRunId, setDiffRunId] = useState<string | null>(null)
   const [selectedMissionId, setSelectedMissionId] = useState<string | null>(null)
   const [creatingMission, setCreatingMission] = useState(false)
+  const [planningId, setPlanningId] = useState<string | null>(null)
   const team = useTeam(api)
   const pluginsData = usePlugins(api)
   const [selectedPluginId, setSelectedPluginId] = useState<string | null>(null)
@@ -168,6 +169,7 @@ export function App() {
   const startMission = () => {
     setView('missions')
     setSelectedMissionId(null)
+    setPlanningId(null)
     setCreatingMission(true)
   }
   const askChat = (content: string, notice: string) => {
@@ -379,9 +381,19 @@ export function App() {
                 refreshKey={missionsRefresh}
                 onSelect={(id) => {
                   setCreatingMission(false)
+                  setPlanningId(null)
                   setSelectedMissionId(id)
                 }}
-                onNew={() => setCreatingMission(true)}
+                selectedPlanningId={planningId}
+                onSelectPlanning={(id) => {
+                  setSelectedMissionId(null)
+                  setCreatingMission(false)
+                  setPlanningId(id)
+                }}
+                onNew={() => {
+                  setPlanningId(null)
+                  setCreatingMission(true)
+                }}
               />
             ) : view === 'agents' ? (
               <PersonaList
@@ -437,13 +449,19 @@ export function App() {
         ) : view === 'models' ? (
           <ModelsScreen api={api} tab={modelsTab} />
         ) : view === 'missions' ? (
-          creatingMission && project ? (
+          (creatingMission || planningId) && project ? (
             <NewMission
+              key={planningId ?? 'new'}
               api={api}
               projectId={project.id}
-              onCancel={() => setCreatingMission(false)}
+              initialSessionId={planningId}
+              onCancel={() => {
+                setCreatingMission(false)
+                setPlanningId(null)
+              }}
               onCreated={(mission) => {
                 setCreatingMission(false)
+                setPlanningId(null)
                 setSelectedMissionId(mission.id)
                 setMissionsRefresh((n) => n + 1)
               }}
