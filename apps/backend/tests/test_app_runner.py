@@ -61,9 +61,9 @@ def test_a_busy_port_is_replaced_by_a_free_one() -> None:
 @pytest.mark.parametrize(
     ("contract", "message"),
     [
-        (None, "has no .hex/project.json"),
-        ({"start": "node server.js"}, "no `start` command and `port`"),  # a library: no port
-        ({"port": 3000}, "no `start` command and `port`"),
+        (None, "command-line program, not a web app"),
+        ({"start": "node server.js"}, "terminal from the project folder: `node server.js`"),
+        ({"port": 3000}, "command-line program, not a web app"),
     ],
 )
 def test_a_project_that_is_not_an_app_says_why(

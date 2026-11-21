@@ -1,3 +1,4 @@
+import asyncio
 import re
 import uuid
 from dataclasses import dataclass
@@ -27,6 +28,16 @@ _STOP = re.compile(
     r"^\s*(?:please\s+)?stop(?:\s+(?:it|the\s+app|my\s+app|running))?\s*[.!]?\s*$",
     re.IGNORECASE,
 )
+
+
+# "run 2 + 3": run a command-line project with these arguments (D78). Only used when the
+# project is a command-line program; otherwise the message goes to the PM as usual.
+_RUN_WITH = re.compile(r"^\s*run\s+(?P<args>\S.{0,500})$", re.IGNORECASE | re.DOTALL)
+
+
+def run_arguments(content: str) -> str | None:
+    match = _RUN_WITH.match(content)
+    return match.group("args").strip() if match and "\n" not in content.strip() else None
 
 
 def app_command(content: str) -> str | None:
@@ -71,8 +82,13 @@ class ChatService:
             project_id = conversation.project_id
 
         command = app_command(content) if self._apps is not None else None
+        reply_meta = None
         if command is not None:
-            reply, meta = await self._app_reply(project_id, command)
+            reply_meta = await self._app_reply(project_id, command)
+        elif self._apps is not None and (args := run_arguments(content)) is not None:
+            reply_meta = await self._cli_reply(project_id, args)  # None: not a CLI project
+        if reply_meta is not None:
+            reply, meta = reply_meta
             async with sessionmaker.begin() as session:
                 assistant_message = Message(
                     conversation_id=conversation_id, role="assistant", content=reply, meta=meta
@@ -136,6 +152,9 @@ class ChatService:
         async with self._services.sessionmaker() as session:
             project = await session.get(Project, project_id)
         assert project is not None
+        cli = await self._cli_reply(project_id, "", folder=Path(project.workspace_path))
+        if cli is not None:
+            return cli
         try:
             app = await self._apps.start(str(project_id), Path(project.workspace_path))
         except AppError as exc:
@@ -145,6 +164,26 @@ class ChatService:
             text = f"The app did not start: {app.error}.\n\n```\n{logs}\n```"
             return text, {"kind": "app", "status": app.status}
         return link_text(app), {"kind": "app", "status": "running", "url": app.url}
+
+    async def _cli_reply(
+        self, project_id: uuid.UUID, args: str, folder: Path | None = None
+    ) -> tuple[str, dict] | None:
+        """Run a command-line project in the sandbox and show its output; None when the
+        project is not one (a web app gets a link instead)."""
+        from app.db.models import Project
+        from app.preview.cli_runner import cli_plan, cli_reply, run_cli
+
+        if folder is None:
+            async with self._services.sessionmaker() as session:
+                project = await session.get(Project, project_id)
+            assert project is not None
+            folder = Path(project.workspace_path)
+        plan = await asyncio.to_thread(cli_plan, folder)
+        if plan is None:
+            return None
+        outcome = await run_cli(folder, plan, args)
+        meta = {"kind": "app", "status": "ran", "exit_code": outcome.exit_code}
+        return cli_reply(plan, args, outcome), meta
 
 
 def _title(content: str) -> str:

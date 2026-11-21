@@ -22,6 +22,7 @@ from typing import Literal
 
 import httpx
 
+from app.preview.guess import NotAWebApp, guess_contract, not_a_web_app_message
 from app.sandbox.contract import load_contract
 from app.sandbox.image import DockerfileError, ensure_project_image
 from app.sandbox.runner import docker_available, ensure_image, hardening_flags
@@ -118,15 +119,17 @@ class AppRunner:
             contract = load_contract(folder)
         except ValueError as exc:
             raise AppError(str(exc)) from None
-        if contract is None:
-            raise AppError(
-                "this project has no .hex/project.json, so H.E.X does not know how to start it"
-            )
+        if contract is None or not contract.port:
+            # no run contract, or one for a program without a port: work it out from the files
+            try:
+                contract = guess_contract(folder)
+            except NotAWebApp as exc:
+                start = contract.start if contract is not None else None
+                raise AppError(
+                    not_a_web_app_message(folder, start) if start else str(exc)
+                ) from None
         if not contract.start or not contract.port:
-            raise AppError(
-                "the project's .hex/project.json has no `start` command and `port`: it is not an "
-                "app that can be opened (for example a library), or DevOps left them out"
-            )
+            raise AppError(not_a_web_app_message(folder))
         available, reason = docker_available()
         if not available:
             raise AppError(f"the sandbox (Docker) is not available: {reason}")
