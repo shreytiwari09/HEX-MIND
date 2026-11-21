@@ -25,6 +25,10 @@ def entry(
     tool_call: bool | None = True,
     deprecated: bool = False,
     access: str = "unknown",
+    calls: int = 0,
+    ok_calls: int = 0,
+    latency: int | None = None,
+    tpm: int | None = None,
 ) -> CatalogEntry:
     return CatalogEntry(
         connection_id=f"id-{connection}",
@@ -50,6 +54,10 @@ def entry(
         has_profile=tiers is not None,
         free=model.endswith(":free") or local,
         access=access,  # type: ignore[arg-type]
+        calls=calls,
+        ok_calls=ok_calls,
+        median_latency_ms=latency,
+        tpm_limit=tpm,
     )
 
 
@@ -251,3 +259,78 @@ def test_a_free_model_counts_as_costing_nothing() -> None:
     proposal = one("backend", [paid, free], "cheapest")
 
     assert model_of(proposal) == "deepseek:free" and "free" in proposal.reason
+
+
+# ---------- measured limits, speed and failures (live runs, PRD D71) ----------
+from app.catalog.measured import RoleLoad  # noqa: E402
+
+LOADS = {"backend": RoleLoad(3000, 6000, True), "code-reviewer": RoleLoad(1300, 1500, True)}
+
+
+def loaded(persona: str, entries: list[CatalogEntry], preset: str = "balanced"):
+    [proposal] = assign([persona], entries, preset, REQ, LOADS)  # type: ignore[arg-type]
+    return proposal
+
+
+def test_a_model_whose_per_minute_limit_cannot_fit_the_role_is_not_its_first_choice() -> None:
+    # Groq's free plan: 8,000 tokens a minute. Two builder requests of up to 6,000 do not fit.
+    groq = entry("Groq", "oss", (4, 4, 3, 4), ("0.15", "0.6"), access="works", tpm=8000)
+    free = entry("Harbor", "deepseek:free", (3, 4, 1, 4), None, access="works")
+
+    builder = loaded("backend", [groq, free], "best")
+    reviewer = loaded("code-reviewer", [groq, free], "best")
+
+    assert model_of(builder) == "deepseek:free" and "oss" in [p.model for p in builder.fallbacks]
+    assert model_of(reviewer) == "oss"  # small requests fit, so the stronger model is used
+    assert "8,000 tokens a minute" in reviewer.reason
+
+
+def test_a_model_that_is_very_slow_or_fails_often_here_comes_after_one_that_works() -> None:
+    slow = entry("NVIDIA", "glm", (4, 5, 3, 5), None, access="works", calls=4, ok_calls=4,
+                 latency=200_000)  # fmt: skip
+    flaky = entry("NVIDIA", "kimi", (5, 5, 4, 5), None, access="works", calls=6, ok_calls=2)
+    steady = entry("Harbor", "deepseek:free", (3, 4, 1, 4), None, access="works", calls=9,
+                   ok_calls=9, latency=4000)  # fmt: skip
+
+    proposal = loaded("backend", [slow, flaky, steady], "best")
+
+    assert model_of(proposal) == "deepseek:free" and "about 4 s" in proposal.reason
+
+
+def test_equally_good_free_models_are_spread_over_connections() -> None:
+    a = entry("Harbor", "deepseek:free", (3, 4, 1, 4), None, access="works")
+    b = entry("NVIDIA", "glm:free", (3, 4, 1, 4), None, access="works")
+
+    picks = assign(["backend", "devops", "frontend"], [a, b], "cheapest", REQ, LOADS)  # type: ignore[arg-type]
+
+    assert {p.primary.connection_name for p in picks if p.primary} == {"Harbor", "NVIDIA"}
+
+
+def test_a_well_rated_model_that_fails_here_loses_to_one_that_works_here() -> None:
+    # Live (2026-11-21): GLM met the builder rating but answered 2 of 7 calls, in ~212 s.
+    glm = entry("NVIDIA", "glm", (4, 5, 3, 5), None, access="works", calls=7, ok_calls=2,
+                latency=212_000)  # fmt: skip
+    unrated = entry("Harbor", "deepseek:free", None, None, access="works", calls=33, ok_calls=33,
+                    latency=3600)  # fmt: skip
+
+    proposal = loaded("backend", [glm, unrated])
+
+    assert model_of(proposal) == "deepseek:free"
+    assert "slow, failing or limited here" in proposal.reason
+    assert "glm" in [p.model for p in proposal.fallbacks]  # still a fallback
+
+
+@pytest.mark.parametrize(
+    "model",
+    ["openai/gpt-oss-safeguard-20b", "nvidia/nemotron-3.5-content-safety", "nvidia/nv-embedqa-1b",
+     "whisper-large-v3", "nvidia/llama-3.1-nemoguard-8b", "jina-reranker-v2", "omni-moderation"],
+)  # fmt: skip
+def test_models_made_for_another_job_are_never_given_a_role(model: str) -> None:
+    special = entry("Groq", model, (5, 5, 5, 5), ("0", "0"), access="works")
+    chat = entry("Harbor", "deepseek:free", (3, 4, 1, 4), None, access="works")
+
+    proposal = one("backend", [special, chat], "best")
+
+    assert model_of(proposal) == "deepseek:free" and model not in [
+        p.model for p in proposal.fallbacks
+    ]

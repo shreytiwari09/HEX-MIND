@@ -22,6 +22,11 @@ export function modelLabel(entry: CatalogEntry): string {
   else tags.push('price unknown')
   if (entry.access === 'works') tags.push('works on your account')
   if (entry.access === 'refused') tags.push('refused: needs a plan or key')
+  if (entry.median_latency_ms) tags.push(`answers in ~${Math.max(1, Math.round(entry.median_latency_ms / 1000))} s`)
+  if (entry.tpm_limit) tags.push(`limit ${entry.tpm_limit.toLocaleString('en-US')} tokens/min`)
+  if (entry.tpd_limit) tags.push(`${entry.tpd_limit.toLocaleString('en-US')} tokens/day`)
+  if (entry.calls && entry.calls >= 3 && (entry.ok_calls ?? 0) / entry.calls < 0.5)
+    tags.push(`answered only ${entry.ok_calls ?? 0} of ${entry.calls} calls`)
   return `${entry.connection_name} · ${entry.model} (${tags.join(', ')})`
 }
 

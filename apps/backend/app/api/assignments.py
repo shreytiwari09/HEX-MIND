@@ -11,6 +11,7 @@ from sqlalchemy import select
 from app.agents.persona import all_personas
 from app.api.deps import ServicesDep, SessionDep
 from app.catalog.assigner import Pick, Preset, assign
+from app.catalog.measured import role_loads
 from app.catalog.requirements import requirements_with_custom
 from app.db.models import ModelAssignment
 from app.providers import assignments
@@ -102,7 +103,8 @@ async def auto_assign(body: AutoRequest, session: SessionDep, services: Services
     assert services.catalog is not None
     entries = await services.catalog.entries(session)
     persona_ids = sorted(all_personas())
-    proposals = assign(persona_ids, entries, body.preset, requirements_with_custom())
+    loads = await role_loads(session)  # what each role's requests weigh, measured here (D71)
+    proposals = assign(persona_ids, entries, body.preset, requirements_with_custom(), loads)
     existing = {row.persona_id: row for row in await session.scalars(select(ModelAssignment))}
 
     out: list[ProposalOut] = []

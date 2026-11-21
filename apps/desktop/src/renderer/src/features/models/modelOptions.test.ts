@@ -34,6 +34,18 @@ describe('model options', () => {
     expect(modelLabel(entry('glm', { access: 'works' }))).toBe(
       'Harbor · glm (price unknown, works on your account)'
     )
+    expect(
+      modelLabel(
+        entry('oss', {
+          input_per_mtok: '0.15', output_per_mtok: '0.6', access: 'works', calls: 10, ok_calls: 9,
+          median_latency_ms: 1400, tpm_limit: 8000, tpd_limit: 200000
+        })
+      )
+    ).toBe(
+      'Harbor · oss (paid · $0.15 in / $0.6 out per Mtok, works on your account, answers in ~1 s, ' +
+        'limit 8,000 tokens/min, 200,000 tokens/day)'
+    )
+    expect(modelLabel(entry('kimi', { calls: 6, ok_calls: 2 }))).toContain('answered only 2 of 6 calls')
     const refused = entry('claude', { access: 'refused' })
     expect(modelLabel(refused)).toBe('Harbor · claude (price unknown, refused: needs a plan or key)')
     expect(isRefused(refused)).toBe(true)

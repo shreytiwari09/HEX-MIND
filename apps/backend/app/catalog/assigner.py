@@ -24,10 +24,13 @@ key) is never picked, and a model with no known price that has never answered on
 free, has a known price, or has already worked. A free model (`:free`, local) costs nothing.
 """
 
+import re
+from collections import Counter
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Literal
 
+from app.catalog.measured import RoleLoad
 from app.catalog.requirements import Requirements, RoleRequirement
 from app.catalog.service import CatalogEntry
 
@@ -41,6 +44,13 @@ _CAPABILITY_NAMES = {
     "tool_use": "tool use",
 }
 _INF = Decimal("Infinity")
+# Models made for another job (safety filters, embeddings, speech, reranking, moderation): their
+# names say so, and they cannot do an agent's work. Never given a role.
+_NOT_AN_ASSISTANT = re.compile(
+    r"guard|safety|embed|whisper|\btts\b|rerank|moderation|clip\b|translate", re.I
+)
+# Slower than this for a median answer, measured here, and a model is a poor first choice.
+SLOW_MS = 60_000
 
 
 @dataclass(frozen=True)
@@ -80,6 +90,24 @@ def _reach(entry: CatalogEntry) -> int:
     return 0 if entry.free or entry.local or entry.access == "works" or known_price else 1
 
 
+def _fits(entry: CatalogEntry, load: RoleLoad | None) -> bool:
+    """Its per-minute token limit (when the provider stated one) holds two of the role's largest
+    requests: agents make several calls a minute."""
+    return load is None or entry.tpm_limit is None or entry.tpm_limit >= 2 * load.peak
+
+
+def _health(entry: CatalogEntry, load: RoleLoad | None) -> int:
+    """1 when measurements on this account make the model a poor first choice for the role: a
+    per-minute limit too small for it, mostly failing, or very slow. 0 otherwise."""
+    if not _fits(entry, load):
+        return 1
+    if entry.calls >= 3 and entry.ok_calls / entry.calls < 0.5:
+        return 1
+    if entry.median_latency_ms is not None and entry.median_latency_ms > SLOW_MS:
+        return 1
+    return 0
+
+
 def _cost(entry: CatalogEntry) -> Decimal | None:
     """USD per million tokens, weighting input 3:1 over output (typical for agent work)."""
     if entry.local or entry.free:
@@ -99,12 +127,42 @@ def _meets(entry: CatalogEntry, req: RoleRequirement) -> bool:
     return True
 
 
-def _by_quality(req: RoleRequirement):
-    return lambda e: (_reach(e), -_quality(e, req), _cost(e) if _cost(e) is not None else _INF)
+def _by_quality(req: RoleRequirement, load: RoleLoad | None = None, used: Counter | None = None):
+    used = used or Counter()
+    return lambda e: (
+        _reach(e),
+        _health(e, load),
+        -_quality(e, req),
+        _cost(e) if _cost(e) is not None else _INF,
+        used[e.connection_id],  # equally good and priced (two free models): spread the team
+    )
 
 
-def _by_cost(req: RoleRequirement):
-    return lambda e: (_reach(e), _cost(e) if _cost(e) is not None else _INF, -_quality(e, req))
+def _by_cost(req: RoleRequirement, load: RoleLoad | None = None, used: Counter | None = None):
+    used = used or Counter()
+    return lambda e: (
+        _reach(e),
+        _health(e, load),
+        _cost(e) if _cost(e) is not None else _INF,
+        used[e.connection_id],
+        -_quality(e, req),
+    )
+
+
+def _measured(entry: CatalogEntry, load: RoleLoad | None) -> str:
+    """What was measured, in plain words, for the reason line."""
+    parts = []
+    if entry.median_latency_ms is not None:
+        parts.append(f"answers in about {max(1, round(entry.median_latency_ms / 1000))} s here")
+    if entry.tpm_limit is not None and load is not None:
+        verdict = "fits" if _fits(entry, load) else "is small for"
+        parts.append(
+            f"its limit of {entry.tpm_limit:,} tokens a minute {verdict} this role's requests "
+            f"(up to {load.peak:,})"
+        )
+    if entry.calls >= 3 and entry.ok_calls / entry.calls < 0.5:
+        parts.append(f"answered only {entry.ok_calls} of {entry.calls} calls here")
+    return "; ".join(parts)
 
 
 def _money(value: Decimal) -> str:
@@ -138,6 +196,7 @@ def assign(
     entries: list[CatalogEntry],
     preset: Preset,
     requirements: Requirements,
+    loads: dict[str, RoleLoad] | None = None,
 ) -> list[Proposal]:
     pool = [
         e
@@ -145,13 +204,26 @@ def assign(
         if not e.deprecated
         and e.tool_call is not False
         and e.access != "refused"
+        and not _NOT_AN_ASSISTANT.search(e.model)
         and (preset != "private" or e.local)
     ]
-    return [_assign_one(pid, pool, preset, requirements) for pid in persona_ids]
+    used: Counter[str] = Counter()
+    proposals = []
+    for pid in persona_ids:
+        proposal = _assign_one(pid, pool, preset, requirements, (loads or {}).get(pid), used)
+        if proposal.primary is not None:
+            used[proposal.primary.connection_id] += 1
+        proposals.append(proposal)
+    return proposals
 
 
 def _assign_one(
-    persona_id: str, pool: list[CatalogEntry], preset: Preset, requirements: Requirements
+    persona_id: str,
+    pool: list[CatalogEntry],
+    preset: Preset,
+    requirements: Requirements,
+    load: RoleLoad | None = None,
+    used: Counter | None = None,
 ) -> Proposal:
     req = requirements.roles.get(persona_id)
     if req is None:
@@ -165,16 +237,22 @@ def _assign_one(
         )
 
     strict = [e for e in pool if _meets(e, req)]
-    # Models the account is known to reach win over ones it may not be able to call at all, even
-    # when only the latter are profiled to qualify.
-    unreached_only = [e for e in strict if _reach(e)]
-    if any(_reach(e) == 0 for e in pool):
-        strict = [e for e in strict if _reach(e) == 0]
+
+    # A model that works well on this account wins over one that may not be callable at all, or
+    # that is measured here as slow, failing or too limited for the role, even when only the
+    # latter is profiled to qualify (PRD D69, D71).
+    def good(e: CatalogEntry) -> bool:
+        return _reach(e) == 0 and _health(e, load) == 0
+
+    passed_over = [e for e in strict if not good(e)]
+    if any(good(e) for e in pool):
+        strict = [e for e in strict if good(e)]
     quality_first = preset == "best" or (preset in ("balanced", "private") and req.critical)
-    key = _by_quality(req) if quality_first else _by_cost(req)
+    key = _by_quality(req, load, used) if quality_first else _by_cost(req, load, used)
 
     if strict:
-        ranked = sorted(strict, key=key)
+        # the models passed over stay as later fallbacks
+        ranked = sorted(strict, key=key) + sorted(passed_over, key=key)
         primary = ranked[0]
         how = (
             f"strongest for {_focus(req)} among your models meeting {_need(req)}"
@@ -184,12 +262,12 @@ def _assign_one(
         verified = True
     else:
         # Nothing is profiled to meet the minimums. Take the best available and say so.
-        ranked = sorted(pool, key=_by_quality(req))
+        ranked = sorted(pool, key=_by_quality(req, load, used))
         primary = ranked[0]
         how = (
-            f"unverified: none of the models your account is known to reach meets {_need(req)} "
-            "(stronger ones are not yet used on your account); best available"
-            if unreached_only
+            f"unverified: none of the models that work well on your account meets {_need(req)} "
+            "(the ones that do are untried, or slow, failing or limited here); best available"
+            if passed_over
             else f"unverified: none of your models is profiled to meet {_need(req)}; best available"
         )
         verified = False
@@ -210,4 +288,6 @@ def _assign_one(
     reason = f"{how}: {primary.model} on {primary.connection_name} ({_price(primary)})"
     if _reach(primary):
         reason += "; not yet used on your account, so it may need a paid plan"
+    if measured := _measured(primary, load):
+        reason += f"; {measured}"
     return Proposal(persona_id, _pick(primary), fallbacks, escalate, reason, verified)

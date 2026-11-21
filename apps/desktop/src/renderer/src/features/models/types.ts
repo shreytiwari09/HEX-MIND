@@ -108,4 +108,11 @@ export interface CatalogEntry {
   free?: boolean
   /** From this account's own call log: its last call answered, or the provider refused it. */
   access?: 'works' | 'refused' | 'unknown'
+  /** Measured on this account (D71). */
+  calls?: number
+  ok_calls?: number
+  median_latency_ms?: number | null
+  /** The provider's stated token limits, read from its refusals. */
+  tpm_limit?: number | null
+  tpd_limit?: number | null
 }

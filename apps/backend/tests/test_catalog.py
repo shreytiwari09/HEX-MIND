@@ -386,3 +386,36 @@ async def test_each_model_shows_whether_it_is_free_and_what_this_account_saw_whe
     assert by_model["flaky"]["access"] == "unknown"
     assert by_model["untried"]["access"] == "unknown"
     assert by_model["deepseek:free"]["free"] is True and by_model["untried"]["free"] is False
+
+
+async def test_speed_failures_and_stated_limits_are_measured_from_the_call_log(
+    app: FastAPI, client: httpx.AsyncClient
+) -> None:
+    """D71: a Groq limit stated in a refusal applies to a Groq connection's same model, even when
+    the call went through the built-in `.env` provider."""
+    from app.catalog.measured import role_loads
+
+    app.state.services.catalog = service(app.state.settings.data_dir, serve())
+    await _connection(app, "Groq", "groq", ["openai/gpt-oss-120b"])
+    too_big = (
+        "groq HTTP 413: Request too large for model `openai/gpt-oss-120b` on tokens per minute "
+        "(TPM): Limit 8000, Requested 9100"
+    )
+    per_day = "groq HTTP 429: Rate limit reached on tokens per day (TPD): Limit 200000, Used 199527"
+    async with app.state.sessionmaker.begin() as session:
+        for latency, error in [(900, None), (1100, None), (5000, too_big), (300, per_day)]:
+            session.add(LLMCall(
+                purpose="coder", provider="groq", model="openai/gpt-oss-120b",
+                latency_ms=latency, error=error, persona_id="backend", input_tokens=3000,
+            ))  # fmt: skip
+
+    [groq] = [
+        e for e in (await client.get("/api/catalog")).json() if e["connection_name"] == "Groq"
+    ]
+
+    assert (groq["calls"], groq["ok_calls"], groq["median_latency_ms"]) == (4, 2, 1000)
+    assert (groq["tpm_limit"], groq["tpd_limit"]) == (8000, 200000)
+    async with app.state.sessionmaker() as session:
+        loads = await role_loads(session)
+    assert (loads["backend"].typical, loads["backend"].measured) == (3000, True)
+    assert loads["researcher"].measured is False  # never ran here: the default

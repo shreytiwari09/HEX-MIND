@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.catalog import modelsdev
+from app.catalog.measured import model_stats
 from app.catalog.modelsdev import CatalogData, CatalogError, CatalogModel
 from app.catalog.profiles import Tiers, load_profiles
 from app.db.models import Connection, LLMCall
@@ -55,6 +56,13 @@ class CatalogEntry(BaseModel):
     # From this account's own call log: "works" (its last call answered), "refused" (the provider
     # refused it: HTTP 401, 402 or 403, e.g. no plan for a paid model), or "unknown".
     access: Literal["works", "refused", "unknown"] = "unknown"
+    # Measured on this account (D71): calls, how many answered, the median time of an answer,
+    # and the provider's stated per-minute / per-day token limits.
+    calls: int = 0
+    ok_calls: int = 0
+    median_latency_ms: int | None = None
+    tpm_limit: int | None = None
+    tpd_limit: int | None = None
 
 
 class CatalogStatus(BaseModel):
@@ -148,6 +156,7 @@ class CatalogService:
         query = select(Connection).where(Connection.enabled.is_(True)).order_by(Connection.name)
         entries: list[CatalogEntry] = []
         access = await access_from_calls(session)
+        stats = await model_stats(session)
         for connection in await session.scalars(query):
             if connection_id is not None and str(connection.id) != connection_id:
                 continue
@@ -155,6 +164,11 @@ class CatalogService:
             for model in connection.models:
                 entry = self._entry(connection, preset.local, model)
                 entry.access = access.get((str(connection.id), model), "unknown")
+                measured = stats.get((connection.provider_type, model))
+                if measured is not None:
+                    entry.calls, entry.ok_calls = measured.calls, measured.ok
+                    entry.median_latency_ms = measured.median_latency_ms
+                    entry.tpm_limit, entry.tpd_limit = measured.tpm_limit, measured.tpd_limit
                 entries.append(entry)
         return entries
 
