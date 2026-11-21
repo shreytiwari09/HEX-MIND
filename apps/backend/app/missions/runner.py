@@ -54,7 +54,7 @@ from app.db.models import (
     ValidatorReportRow,
 )
 from app.events.log import EventType, append_event
-from app.missions import folder, service
+from app.missions import chat_updates, folder, service
 from app.missions.models import (
     TESTABLE,
     AgentReport,
@@ -1174,6 +1174,11 @@ class MissionRunner:
                     self.run_id,
                     EventType.RUN_COMPLETED,
                     payload={"summary": "Every feature is done or skipped."},
+                )
+            if self.services.apps is not None and self.services.settings.app_autorun_after_mission:
+                self.services.background.spawn(
+                    chat_updates.run_after_mission(self.services, self.mission_id, self.worktree),
+                    name=f"app-after-{self.mission_id}",
                 )
         await self._settle()
 

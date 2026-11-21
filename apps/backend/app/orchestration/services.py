@@ -16,6 +16,7 @@ from app.providers.secrets import KeyStore
 
 if TYPE_CHECKING:
     from app.catalog.service import CatalogService
+    from app.preview.app_runner import AppRunner
     from app.research.web import WebFetcher
 
 # (services, run_id, *, requires_planning, requires_review) -> None
@@ -46,6 +47,8 @@ class Services:
     # The page reader for researchers; None means a real one is made per research run.
     research_web: "WebFetcher | None" = None
     mission_tasks: dict[uuid.UUID, "asyncio.Task[None]"] = field(default_factory=dict)
+    # Apps the user runs to try a project (D71); None in tests that do not need them.
+    apps: "AppRunner | None" = None
 
     def mission_active(self, mission_id: uuid.UUID) -> bool:
         task = self.mission_tasks.get(mission_id)

@@ -70,6 +70,7 @@ def settings(tmp_path: Path) -> Settings:
         crew_service_autostart=False,
         key_store="memory",  # never touch the developer's real keychain in tests
         tavily_api_key=None,  # libraries load .env into the environment: never use a real key
+        app_autorun_after_mission=False,  # tests that want it turn it on
         _env_file=None,
     )
 

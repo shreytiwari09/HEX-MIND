@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { ApiError, type ApiClient, type ChatMessage, type Conversation } from '../../lib/api'
-import { useChat } from './useChat'
+import { POLL_MS, useChat } from './useChat'
 
 const CONVERSATION: Conversation = {
   id: 'c1',
@@ -66,6 +66,32 @@ describe('useChat', () => {
     const { result } = renderHook(() => useChat(api, 'p1'))
     await waitFor(() => expect(result.current.messages.map((m) => m.content)).toEqual(['earlier']))
     expect(result.current.active?.id).toBe('c1')
+  })
+
+  it('shows messages a mission posts while the conversation is open', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      let history = [message('m1', 'assistant', '🔨 Building **Todo model** (backend)…')]
+      const api = fakeApi({
+        get: vi.fn(async (path: string) => {
+          if (path === '/projects/p1/conversations') return [CONVERSATION]
+          if (path === '/conversations/c1') return CONVERSATION
+          if (path === '/conversations/c1/messages') return history
+          throw new Error(path)
+        })
+      })
+      const { result } = renderHook(() => useChat(api, 'p1'))
+      await waitFor(() => expect(result.current.messages).toHaveLength(1))
+
+      history = [...history, message('m2', 'assistant', '✅ **Todo model** is done')]
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(POLL_MS + 10)
+      })
+
+      await waitFor(() => expect(result.current.messages.map((m) => m.id)).toEqual(['m1', 'm2']))
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('reports failures and returns null so the draft can be kept', async () => {

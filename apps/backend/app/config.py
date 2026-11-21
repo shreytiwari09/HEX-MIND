@@ -96,6 +96,9 @@ class Settings(BaseSettings):
 
     # Sandbox for checks. Only these images may be used, whatever a project profile says.
     sandbox_images: list[str] = ["node:22-alpine", "python:3.11-slim"]
+    # Start a completed mission's app (when it has a start command and port) and post the link
+    # in the mission's chat (D71).
+    app_autorun_after_mission: bool = True
     sandbox_timeout_s: int = 120
 
     # CrewAI crews served over A2A (python -m app.a2a). The backend starts the service itself

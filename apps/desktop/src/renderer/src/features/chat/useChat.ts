@@ -14,6 +14,8 @@ export interface Chat {
   send: (content: string, mode: ChatMode) => Promise<MessageExchange | null>
 }
 
+export const POLL_MS = 4000
+
 export function useChat(api: ApiClient, projectId: string | null): Chat {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [active, setActive] = useState<Conversation | null>(null)
@@ -56,6 +58,22 @@ export function useChat(api: ApiClient, projectId: string | null): Chat {
       .then((list) => (list[0] ? select(list[0].id) : undefined))
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
   }, [projectId, refreshList, select])
+
+  // Missions post their progress into the chat (D71): while nothing is being sent, check every
+  // few seconds for new messages in the open conversation and for new conversations.
+  const activeId = active?.id ?? null
+  useEffect(() => {
+    if (!projectId || pending) return
+    const timer = setInterval(() => {
+      void refreshList().catch(() => {})
+      if (!activeId) return
+      api
+        .get<ChatMessage[]>(`/conversations/${activeId}/messages`)
+        .then((history) => setMessages((prev) => (history.length === prev.length ? prev : history)))
+        .catch(() => {})
+    }, POLL_MS)
+    return () => clearInterval(timer)
+  }, [api, projectId, activeId, pending, refreshList])
 
   const startNew = useCallback(() => {
     setActive(null)

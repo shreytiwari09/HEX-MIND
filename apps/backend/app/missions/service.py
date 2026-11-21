@@ -30,7 +30,7 @@ from app.db.models import (
     Run,
 )
 from app.events.log import EventType, append_event
-from app.missions import folder
+from app.missions import chat_updates, folder
 from app.missions.models import Handoff, MissionPlan
 from app.workspace import git
 
@@ -294,6 +294,8 @@ async def _mission_status_event(
         EventType.MISSION_STATUS_CHANGED,
         payload={"status": to, "previous": previous, "reason": reason},
     )
+    if to != previous:
+        await chat_updates.mission_status(session, run_id, to, reason)
 
 
 async def set_feature(
@@ -314,6 +316,9 @@ async def set_feature(
             "commit": row.commit,
         },
     )
+    text = chat_updates.feature_text(row.title, row.persona_id, status, row.attempts)
+    if text is not None:
+        await chat_updates.post(session, mission, text, {"feature_id": row.key, "status": status})
 
 
 async def set_milestone(
@@ -385,6 +390,9 @@ async def create_need(
             "options": list(NEED_ACTIONS[kind]),
             "feature_id": feature.key if feature else None,
         },
+    )
+    await chat_updates.post(
+        session, mission, chat_updates.need_text(summary, list(NEED_ACTIONS[kind])), {"need": kind}
     )
     return need
 

@@ -106,7 +106,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.sessionmaker = sessionmaker
     app.state.services = services
     app.state.provider_router = services.providers
-    app.state.apps = AppRunner(settings.sandbox_images)  # apps the user runs (D71)
+    services.apps = AppRunner(settings.sandbox_images)  # apps the user runs (D71)
+    app.state.apps = services.apps
     app.state.chat = ChatService(services, app.state.apps)
     app.state.event_hub = EventHub(settings.database_url)
 
