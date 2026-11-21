@@ -24,6 +24,7 @@ def entry(
     local: bool = False,
     tool_call: bool | None = True,
     deprecated: bool = False,
+    access: str = "unknown",
 ) -> CatalogEntry:
     return CatalogEntry(
         connection_id=f"id-{connection}",
@@ -47,6 +48,8 @@ def entry(
         quirks=[],
         in_models_dev=price is not None,
         has_profile=tiers is not None,
+        free=model.endswith(":free") or local,
+        access=access,  # type: ignore[arg-type]
     )
 
 
@@ -208,3 +211,43 @@ def test_the_same_inputs_always_give_the_same_answer() -> None:
 @pytest.mark.parametrize("persona", sorted(REQ.roles))
 def test_every_persona_has_requirements_that_a_strong_model_meets(persona: str) -> None:
     assert one(persona, [TOP]).verified is True
+
+
+# ---------- what the user's account can actually use (live run, PRD D69) ----------
+# Auto picked `claude-fable-5` on a Token Harbor key with no paid plan for most of the team: the
+# strongest profile, an unknown price, and never used on that account.
+
+
+def test_a_model_the_provider_refused_is_never_picked() -> None:
+    refused = entry("Harbor", "claude", (5, 5, 5, 5), None, access="refused")
+    works = entry("Groq", "oss", (4, 4, 3, 4), ("0.15", "0.6"), access="works")
+
+    for persona in ("pm", "backend", "researcher"):
+        proposal = one(persona, [refused, works], "best")
+        assert model_of(proposal) == "oss"
+        assert all(p.model != "claude" for p in proposal.fallbacks)
+
+
+def test_an_unknown_price_never_used_on_this_account_comes_after_models_known_to_work() -> None:
+    untried = entry("Harbor", "claude", (5, 5, 5, 5), None)  # price unknown, never called
+    works = entry("NVIDIA", "glm", (4, 4, 3, 4), None, access="works")
+    free = entry("Harbor", "deepseek:free", (4, 4, 3, 4), None)
+
+    for preset in ("balanced", "best", "cheapest"):
+        proposal = one("pm", [untried, works, free], preset)
+        assert model_of(proposal) in ("glm", "deepseek:free")
+        assert "may need a paid plan" not in proposal.reason  # the pick itself is reachable
+    # still a fallback, so it can be tried after the ones known to work
+    assert "claude" in [p.model for p in one("pm", [untried, works]).fallbacks]
+    # and still picked when it is all there is, saying so
+    alone = one("pm", [untried])
+    assert model_of(alone) == "claude" and "may need a paid plan" in alone.reason
+
+
+def test_a_free_model_counts_as_costing_nothing() -> None:
+    free = entry("Harbor", "deepseek:free", (3, 4, 1, 4), None)
+    paid = entry("Groq", "oss", (3, 4, 1, 4), ("0.15", "0.6"), access="works")
+
+    proposal = one("backend", [paid, free], "cheapest")
+
+    assert model_of(proposal) == "deepseek:free" and "free" in proposal.reason

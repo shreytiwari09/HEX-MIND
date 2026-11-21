@@ -354,3 +354,35 @@ async def test_a_routed_call_records_a_cost_from_the_catalog(app: FastAPI, tmp_p
     async with app.state.sessionmaker() as session:
         [call] = list(await session.scalars(select(LLMCall)))
     assert call.est_cost_usd == Decimal("2.250000") and json
+
+
+async def test_each_model_shows_whether_it_is_free_and_what_this_account_saw_when_calling_it(
+    app: FastAPI, client: httpx.AsyncClient
+) -> None:
+    """Measured from the account's own call log, never guessed (PRD D69)."""
+    app.state.services.catalog = service(app.state.settings.data_dir, serve())
+    harbor = await _connection(
+        app, "Harbor", "custom", ["paid-model", "deepseek:free", "used", "flaky", "untried"]
+    )
+
+    def call(model: str, error: str | None) -> LLMCall:
+        return LLMCall(
+            purpose="coder", provider="Harbor", model=model, latency_ms=5,
+            connection_id=harbor.id, error=error,
+        )  # fmt: skip
+
+    async with app.state.sessionmaker.begin() as session:
+        session.add(call("paid-model", "Harbor HTTP 402: No active plan was found"))
+        session.add(call("used", "Harbor HTTP 402: no plan"))
+    async with app.state.sessionmaker.begin() as session:  # later calls decide
+        session.add(call("used", None))
+        session.add(call("flaky", "Harbor HTTP 503: overloaded"))  # says nothing about access
+
+    response = await client.get("/api/catalog")
+    by_model = {e["model"]: e for e in response.json() if e["connection_name"] == "Harbor"}
+
+    assert by_model["paid-model"]["access"] == "refused"
+    assert by_model["used"]["access"] == "works"
+    assert by_model["flaky"]["access"] == "unknown"
+    assert by_model["untried"]["access"] == "unknown"
+    assert by_model["deepseek:free"]["free"] is True and by_model["untried"]["free"] is False

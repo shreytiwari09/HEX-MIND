@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import type { ApiClient } from '../../lib/api'
 import { describeError } from '../missions/actions'
+import { isRefused, modelLabel, sortedModels } from './modelOptions'
 import type { Assignment, AutoResult, ModelRef, Persona, Preset, Proposal } from './types'
 import type { ModelsData } from './useModelsData'
 
@@ -235,13 +236,15 @@ function TeamRow({
           disabled={data.catalog.length === 0}
         >
           <option value="">Change model…</option>
-          {data.catalog
-            .filter((entry) => !entry.deprecated)
-            .map((entry) => (
-              <option key={`${entry.connection_id}|${entry.model}`} value={`${entry.connection_id}|${entry.model}`}>
-                {entry.connection_name} · {entry.model}
-              </option>
-            ))}
+          {sortedModels(data.catalog).map((entry) => (
+            <option
+              key={`${entry.connection_id}|${entry.model}`}
+              value={`${entry.connection_id}|${entry.model}`}
+              disabled={isRefused(entry)}
+            >
+              {modelLabel(entry)}
+            </option>
+          ))}
         </select>
         {assignment && (
           <button

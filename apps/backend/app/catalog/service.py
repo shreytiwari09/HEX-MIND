@@ -6,10 +6,12 @@ about what is reachable), the models.dev catalog (price, context, capabilities),
 profiles. A field with no source stays unknown (None); nothing is invented.
 """
 
+import re
 import time
 from collections.abc import Callable
 from decimal import Decimal
 from pathlib import Path
+from typing import Literal
 
 import httpx
 from pydantic import BaseModel
@@ -19,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.catalog import modelsdev
 from app.catalog.modelsdev import CatalogData, CatalogError, CatalogModel
 from app.catalog.profiles import Tiers, load_profiles
-from app.db.models import Connection
+from app.db.models import Connection, LLMCall
 from app.providers.presets import PRESETS
 
 REFRESH_AFTER_S = 24 * 3600
@@ -47,6 +49,12 @@ class CatalogEntry(BaseModel):
     # Where the facts came from, so the UI can say what is unknown.
     in_models_dev: bool
     has_profile: bool
+    # Free to call: a `:free` model id (OpenRouter-style aggregators), a local model, or a known
+    # price of zero. Not a guess from the provider's name.
+    free: bool = False
+    # From this account's own call log: "works" (its last call answered), "refused" (the provider
+    # refused it: HTTP 401, 402 or 403, e.g. no plan for a paid model), or "unknown".
+    access: Literal["works", "refused", "unknown"] = "unknown"
 
 
 class CatalogStatus(BaseModel):
@@ -139,12 +147,15 @@ class CatalogService:
     ) -> list[CatalogEntry]:
         query = select(Connection).where(Connection.enabled.is_(True)).order_by(Connection.name)
         entries: list[CatalogEntry] = []
+        access = await access_from_calls(session)
         for connection in await session.scalars(query):
             if connection_id is not None and str(connection.id) != connection_id:
                 continue
             preset = PRESETS[connection.provider_type]
             for model in connection.models:
-                entries.append(self._entry(connection, preset.local, model))
+                entry = self._entry(connection, preset.local, model)
+                entry.access = access.get((str(connection.id), model), "unknown")
+                entries.append(entry)
         return entries
 
     def _entry(self, connection: Connection, local: bool, model: str) -> CatalogEntry:
@@ -170,4 +181,33 @@ class CatalogService:
             quirks=profile.quirks if profile else [],
             in_models_dev=known is not None,
             has_profile=profile is not None,
+            free=model.endswith(":free")
+            or local
+            or (known is not None and known.input_per_mtok == 0 and known.output_per_mtok == 0),
         )
+
+
+# A provider refusing the account, not the request: no key, a bad key, or no plan for this model.
+_REFUSED = re.compile(r"HTTP (?:401|402|403)\b")
+
+
+async def access_from_calls(session: AsyncSession) -> dict[tuple[str, str], str]:
+    """(connection id, model) -> "works" or "refused", from the latest logged call of each pair.
+    Measured from this account's own calls; a pair never called is absent ("unknown")."""
+    rows = await session.execute(
+        select(LLMCall.connection_id, LLMCall.model, LLMCall.error)
+        .where(LLMCall.connection_id.is_not(None))
+        .order_by(LLMCall.created_at.desc())
+        .limit(5000)
+    )
+    out: dict[tuple[str, str], str] = {}
+    for connection_id, model, error in rows:
+        key = (str(connection_id), model)
+        if key in out:
+            continue  # an older call; the latest one decides
+        if error is None:
+            out[key] = "works"
+        elif _REFUSED.search(error):
+            out[key] = "refused"
+        # any other failure (timeout, rate limit, server error) says nothing about access
+    return out

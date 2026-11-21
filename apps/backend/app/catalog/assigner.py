@@ -17,6 +17,11 @@ Quality tiers are curated estimates (see model_profiles.yaml). A model without a
 shown to meet a requirement, so it is chosen only as a last resort, and the reason says
 "unverified". Nothing is assumed about unknown prices either: such a model is sorted after priced
 ones when saving money.
+
+What the user's account can use comes first (PRD D69): a model the provider refused (no plan, bad
+key) is never picked, and a model with no known price that has never answered on this account
+(an aggregator listing paid models a free account cannot call) comes after every model that is
+free, has a known price, or has already worked. A free model (`:free`, local) costs nothing.
 """
 
 from dataclasses import dataclass, field
@@ -68,9 +73,16 @@ def _quality(entry: CatalogEntry, req: RoleRequirement) -> int:
     return focus * 10 + overall  # the focus decides; the rest breaks ties
 
 
+def _reach(entry: CatalogEntry) -> int:
+    """0 when the account can be expected to use the model, 1 when nothing shows it can: no known
+    price and never answered here."""
+    known_price = entry.input_per_mtok is not None and entry.output_per_mtok is not None
+    return 0 if entry.free or entry.local or entry.access == "works" or known_price else 1
+
+
 def _cost(entry: CatalogEntry) -> Decimal | None:
     """USD per million tokens, weighting input 3:1 over output (typical for agent work)."""
-    if entry.local:
+    if entry.local or entry.free:
         return Decimal(0)
     if entry.input_per_mtok is None or entry.output_per_mtok is None:
         return None
@@ -88,11 +100,11 @@ def _meets(entry: CatalogEntry, req: RoleRequirement) -> bool:
 
 
 def _by_quality(req: RoleRequirement):
-    return lambda e: (-_quality(e, req), _cost(e) if _cost(e) is not None else _INF)
+    return lambda e: (_reach(e), -_quality(e, req), _cost(e) if _cost(e) is not None else _INF)
 
 
 def _by_cost(req: RoleRequirement):
-    return lambda e: (_cost(e) if _cost(e) is not None else _INF, -_quality(e, req))
+    return lambda e: (_reach(e), _cost(e) if _cost(e) is not None else _INF, -_quality(e, req))
 
 
 def _money(value: Decimal) -> str:
@@ -103,6 +115,8 @@ def _money(value: Decimal) -> str:
 def _price(entry: CatalogEntry) -> str:
     if entry.local:
         return "local, no API cost"
+    if entry.free:
+        return "free"
     if entry.input_per_mtok is None or entry.output_per_mtok is None:
         return "price unknown"
     return f"${_money(entry.input_per_mtok)} in / ${_money(entry.output_per_mtok)} out per Mtok"
@@ -128,7 +142,10 @@ def assign(
     pool = [
         e
         for e in entries
-        if not e.deprecated and e.tool_call is not False and (preset != "private" or e.local)
+        if not e.deprecated
+        and e.tool_call is not False
+        and e.access != "refused"
+        and (preset != "private" or e.local)
     ]
     return [_assign_one(pid, pool, preset, requirements) for pid in persona_ids]
 
@@ -148,6 +165,11 @@ def _assign_one(
         )
 
     strict = [e for e in pool if _meets(e, req)]
+    # Models the account is known to reach win over ones it may not be able to call at all, even
+    # when only the latter are profiled to qualify.
+    unreached_only = [e for e in strict if _reach(e)]
+    if any(_reach(e) == 0 for e in pool):
+        strict = [e for e in strict if _reach(e) == 0]
     quality_first = preset == "best" or (preset in ("balanced", "private") and req.critical)
     key = _by_quality(req) if quality_first else _by_cost(req)
 
@@ -164,7 +186,12 @@ def _assign_one(
         # Nothing is profiled to meet the minimums. Take the best available and say so.
         ranked = sorted(pool, key=_by_quality(req))
         primary = ranked[0]
-        how = f"unverified: none of your models is profiled to meet {_need(req)}; best available"
+        how = (
+            f"unverified: none of the models your account is known to reach meets {_need(req)} "
+            "(stronger ones are not yet used on your account); best available"
+            if unreached_only
+            else f"unverified: none of your models is profiled to meet {_need(req)}; best available"
+        )
         verified = False
 
     others = [e for e in ranked if e is not primary]
@@ -181,4 +208,6 @@ def _assign_one(
             escalate = _pick(sorted(stronger, key=_by_quality(req))[0])
 
     reason = f"{how}: {primary.model} on {primary.connection_name} ({_price(primary)})"
+    if _reach(primary):
+        reason += "; not yet used on your account, so it may need a paid plan"
     return Proposal(persona_id, _pick(primary), fallbacks, escalate, reason, verified)

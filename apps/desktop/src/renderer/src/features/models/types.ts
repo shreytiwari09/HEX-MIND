@@ -104,4 +104,8 @@ export interface CatalogEntry {
   tiers: { reasoning: number; coding: number; ui: number; tool_use: number } | null
   has_profile: boolean
   in_models_dev: boolean
+  /** A `:free` model, a local one, or a known price of zero. */
+  free?: boolean
+  /** From this account's own call log: its last call answered, or the provider refused it. */
+  access?: 'works' | 'refused' | 'unknown'
 }
