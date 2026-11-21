@@ -29,3 +29,9 @@ description: Write `.hex/project.json`, the file every check and validator reads
 - `test` must run a real test runner on real tests (for example `node --test`). A command that cannot fail, such as `echo "test passed"` or `true`, is not accepted: the app only counts a test run whose output shows tests running.
 - Use `image` (for example `node:22-alpine`) for a prebuilt image, or `dockerfile` for `.hex/Dockerfile`.
 - Check it with `list_checks` and run `test` once before you finish.
+- For an app the user opens in a browser, set `start`, `port` and `healthcheck`: the user gets
+  a link (`http://localhost:<port>`) from the chat. `start` must listen on `0.0.0.0` (not
+  `localhost`) and on `port` (also given as `$PORT`), or the link cannot reach it. Streamlit:
+  `"start": ".venv/bin/streamlit run app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true"`,
+  `"port": 8501`, with `"install": "python -m venv .venv && .venv/bin/pip install -r requirements.txt"`
+  and `"image": "python:3.11-slim"`. A library or command-line tool has no `start` or `port`.

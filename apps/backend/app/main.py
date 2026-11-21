@@ -12,6 +12,7 @@ from app.a2a.client import CrewServiceProcess, a2a_http_client
 from app.agents import store as persona_store
 from app.api import (
     a2a,
+    apps,
     assignments,
     audit,
     budgets,
@@ -47,6 +48,7 @@ from app.memory.store import Memory, OllamaEmbedding
 from app.missions.recovery import pause_interrupted_missions
 from app.orchestration.background import BackgroundTasks
 from app.orchestration.services import Services
+from app.preview.app_runner import AppRunner
 from app.providers.factory import build_providers
 from app.providers.secrets import make_key_store
 from app.telemetry.tracing import setup_tracing
@@ -89,6 +91,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if settings.crew_service_autostart:
             await crew_service.start(services.a2a_http)
         yield
+        await app.state.apps.stop_all()  # an app never outlives the backend
         await services.background.cancel_all()
         await app.state.event_hub.stop()
         crew_service.stop()
@@ -103,7 +106,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.sessionmaker = sessionmaker
     app.state.services = services
     app.state.provider_router = services.providers
-    app.state.chat = ChatService(services)
+    app.state.apps = AppRunner(settings.sandbox_images)  # apps the user runs (D71)
+    app.state.chat = ChatService(services, app.state.apps)
     app.state.event_hub = EventHub(settings.database_url)
 
     @app.exception_handler(RequestValidationError)
@@ -144,6 +148,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         metrics,
         experiments,
         research,
+        apps,
     ):
         app.include_router(module.router, prefix="/api", dependencies=[Depends(require_token)])
     app.include_router(missions.needs_router, prefix="/api", dependencies=[Depends(require_token)])

@@ -51,7 +51,7 @@ class CheckOutcome:
         return self.exit_code == 0
 
 
-def hardening_flags(*, memory: str, pids: str) -> list[str]:
+def hardening_flags(*, memory: str, pids: str, tmp_size: str = "256m") -> list[str]:
     """What every sandbox container gets, for checks and for plugins alike: resource limits, a
     read-only root filesystem, no capabilities, no privilege escalation, a non-root user."""
     return [
@@ -59,7 +59,7 @@ def hardening_flags(*, memory: str, pids: str) -> list[str]:
         "--memory", memory,
         "--pids-limit", pids,
         "--read-only",
-        "--tmpfs", "/tmp:rw,size=256m",
+        "--tmpfs", f"/tmp:rw,size={tmp_size}",
         "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges",
         "--user", "1000:1000",

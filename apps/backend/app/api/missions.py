@@ -3,8 +3,9 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
@@ -343,6 +344,7 @@ async def apply_mission(
     mission_id: uuid.UUID,
     session: SessionDep,
     services: ServicesDep,
+    request: Request,
     body: ApplyRequest | None = None,
 ) -> MissionOut:
     """Write the mission's changes into the user's project (explicit user action)."""
@@ -357,7 +359,25 @@ async def apply_mission(
         )
     except Refused as exc:
         raise _refuse(exc) from None
+    await _restart_app(request, session, mission_id)
     return await _after(session, mission_id)
+
+
+async def _restart_app(request: Request, session: SessionDep, mission_id: uuid.UUID) -> None:
+    """An app the user is running from the project folder restarts with the applied files (D71);
+    it runs in the background, so Apply does not wait for it."""
+    runner = getattr(request.app.state, "apps", None)
+    mission = await session.get(Mission, mission_id)
+    if runner is None or mission is None:
+        return
+    running = runner.get(str(mission.project_id))
+    project = await session.get(Project, mission.project_id)
+    if running is None or project is None or running.folder != project.workspace_path:
+        return
+    services = request.app.state.services
+    services.background.spawn(
+        runner.start(str(project.id), Path(project.workspace_path)), name=f"app-{project.id}"
+    )
 
 
 @router.post("/{mission_id}/revert", response_model=MissionOut)

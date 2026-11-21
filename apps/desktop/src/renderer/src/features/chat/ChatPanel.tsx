@@ -1,4 +1,4 @@
-import { Plus, Send } from 'lucide-react'
+import { Play, Plus, Send } from 'lucide-react'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 
 import { EmptyState, PanelHeader } from '../../components/Panel'
@@ -51,16 +51,28 @@ export function ChatPanel({ chat, enabled, disabledReason, onOpenRun, onOpenFile
       <PanelHeader
         title="Agent Chat"
         actions={
-          <button
-            type="button"
-            className="icon-button"
-            aria-label="New conversation"
-            title="New conversation"
-            disabled={!enabled}
-            onClick={chat.startNew}
-          >
-            <Plus size={14} />
-          </button>
+          <>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Run app"
+              title="Run the project's app and get a link"
+              disabled={!enabled || chat.pending !== null}
+              onClick={() => void chat.send('run it', 'auto')}
+            >
+              <Play size={14} />
+            </button>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="New conversation"
+              title="New conversation"
+              disabled={!enabled}
+              onClick={chat.startNew}
+            >
+              <Plus size={14} />
+            </button>
+          </>
         }
       />
       {chat.conversations.length > 0 && (

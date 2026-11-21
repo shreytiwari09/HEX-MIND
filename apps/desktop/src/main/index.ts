@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
 
 import { IPC, type AppInfo, type BackendConfig } from '../preload/api'
+import { openableInBrowser } from './links'
 
 /** Set by electron-vite while running `electron-vite dev`. */
 const devServerUrl = process.env['ELECTRON_RENDERER_URL']
@@ -75,11 +76,13 @@ function createWindow(): void {
   win.once('ready-to-show', () => win.show())
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https://')) void shell.openExternal(url)
+    if (openableInBrowser(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
   win.webContents.on('will-navigate', (event, url) => {
-    if (!isAppUrl(url)) event.preventDefault()
+    if (isAppUrl(url)) return
+    event.preventDefault() // the app window never leaves the app
+    if (openableInBrowser(url)) void shell.openExternal(url)
   })
 
   if (devServerUrl) {

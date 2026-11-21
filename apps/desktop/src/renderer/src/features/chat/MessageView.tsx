@@ -39,7 +39,18 @@ export function MessageView({ message, onOpenRun, onOpenFile }: Props) {
       </div>
 
       <div className="msg__body markdown">
-        <Markdown>{message.content}</Markdown>
+        <Markdown
+          components={{
+            // Links open in the browser (the main process decides which may), never in this window.
+            a: ({ href, children }) => (
+              <a href={href} target="_blank" rel="noreferrer">
+                {children}
+              </a>
+            )
+          }}
+        >
+          {message.content}
+        </Markdown>
       </div>
 
       {runId && (

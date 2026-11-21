@@ -66,6 +66,28 @@ describe('ChatPanel', () => {
     expect(chat.send).toHaveBeenCalledWith('Add dark mode', 'edit')
   })
 
+  it('Run app asks the chat to run the project, which replies with the link', () => {
+    const chat = fakeChat()
+    render(<ChatPanel chat={chat} enabled disabledReason="" onOpenRun={() => {}} onOpenFile={() => {}} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run app' }))
+
+    expect(chat.send).toHaveBeenCalledWith('run it', 'auto')
+  })
+
+  it('opens a link in a message in the browser, not in the app window', () => {
+    const message = {
+      id: 'm1', role: 'assistant', mode: null, created_at: '2026-11-21T10:00:00Z',
+      content: 'Your app is running: **[http://localhost:8501](http://localhost:8501)**',
+      metadata: { kind: 'app', status: 'running', url: 'http://localhost:8501' }
+    } as unknown as ChatMessage
+    render(<MessageView message={message} onOpenRun={() => {}} onOpenFile={() => {}} />)
+
+    const link = screen.getByRole('link', { name: 'http://localhost:8501' })
+    expect(link).toHaveAttribute('href', 'http://localhost:8501')
+    expect(link).toHaveAttribute('target', '_blank')
+  })
+
   it('Shift+Enter does not send', () => {
     const chat = fakeChat()
     render(<ChatPanel chat={chat} enabled disabledReason="" onOpenRun={() => {}} onOpenFile={() => {}} />)
