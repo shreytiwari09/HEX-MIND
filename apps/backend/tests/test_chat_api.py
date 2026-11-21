@@ -48,6 +48,11 @@ async def test_ask_answers_with_project_context(
     # The answer prompt carried the file read from disk.
     chat_request = [r for r in adapter.requests if r.purpose == "chat"][0]
     assert "export const x = 1" in chat_request.messages[-1].content
+    # ... and the question itself, for both the router and the answer (it was missing: the
+    # models answered "I don't see your message").
+    for purpose in ("router", "chat"):
+        request = [r for r in adapter.requests if r.purpose == purpose][0]
+        assert "What does app.ts export?" in request.messages[-1].content
 
     # Router decision and both LLM calls are logged.
     async with app.state.sessionmaker() as session:
@@ -253,3 +258,75 @@ async def test_conversation_endpoints_404(client: httpx.AsyncClient) -> None:
     assert send.status_code == 404
     create = await client.post(f"/api/projects/{missing}/conversations", json={})
     assert create.status_code == 404
+
+
+async def test_the_chat_is_answered_by_the_pm_when_the_pm_has_a_model(app: FastAPI) -> None:
+    """D71: the PM answers the chat with its own model chain; without one, the global order."""
+    import uuid
+
+    from app.db.models import Connection, ModelAssignment
+    from app.orchestration.conversation import chat_context
+
+    async with app.state.sessionmaker() as session:
+        assert (await chat_context(session)).route is None  # no PM model: global order
+
+    async with app.state.sessionmaker.begin() as session:
+        connection = Connection(name="Harbor", provider_type="custom", base_url="https://x/v1")
+        session.add(connection)
+        await session.flush()
+        session.add(
+            ModelAssignment(
+                persona_id="pm",
+                primary_connection_id=connection.id,
+                primary_model="glm",
+                fallbacks=[{"connection_id": str(connection.id), "model": "deepseek:free"}],
+                set_by="user",
+            )
+        )
+
+    async with app.state.sessionmaker() as session:
+        ctx = await chat_context(session)
+    assert ctx.persona_id == "pm" and ctx.route is not None
+    assert [t.model for t in ctx.route.targets] == ["glm", "deepseek:free"]
+    assert ctx.route.targets[0].connection_id == connection.id and isinstance(
+        connection.id, uuid.UUID
+    )
+
+
+async def test_a_chat_answer_is_sent_on_the_pms_route(
+    app: FastAPI, client: httpx.AsyncClient, workspace: Path
+) -> None:
+    """The whole turn, not just the helper: the route must survive to the answer call (the
+    complexity set later once replaced the context and dropped it)."""
+    from dataclasses import replace
+
+    from app.db.models import Connection, ModelAssignment
+
+    async with app.state.sessionmaker.begin() as session:
+        connection = Connection(name="Harbor", provider_type="custom", base_url="https://x/v1")
+        session.add(connection)
+        await session.flush()
+        session.add(
+            ModelAssignment(
+                persona_id="pm", primary_connection_id=connection.id, primary_model="glm",
+                fallbacks=[], set_by="user",
+            )
+        )  # fmt: skip
+    use_adapter(app, scripted(chat="It exports x."))
+    router = app.state.services.providers
+    original, seen = router.complete, []
+
+    async def recording(request, ctx=None, **kwargs):
+        seen.append((request.purpose, ctx))
+        # the scripted adapter stands in for the PM's connection
+        return await original(request, replace(ctx, route=None) if ctx else ctx, **kwargs)
+
+    router.complete = recording
+    _, conversation_id = await _conversation(client, workspace)
+
+    exchange = await _send(client, conversation_id, "What does app.ts export?", "ask")
+
+    assert exchange["assistant_message"]["content"] == "It exports x."
+    [(_, chat_ctx)] = [(p, c) for p, c in seen if p == "chat"]
+    assert chat_ctx.persona_id == "pm" and [t.model for t in chat_ctx.route.targets] == ["glm"]
+    assert chat_ctx.complexity is not None

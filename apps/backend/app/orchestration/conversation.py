@@ -13,6 +13,7 @@ across providers like every other call.
 
 import uuid
 from collections.abc import AsyncGenerator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -35,13 +36,15 @@ from app.orchestration.adk import (
     user_message_from_state,
 )
 from app.orchestration.services import Services
+from app.providers.assignments import route_for
 from app.providers.router import CallContext
 from app.router.classifier import SYSTEM_PROMPT as ROUTER_PROMPT
 from app.router.policy import apply_policy
 from app.router.schemas import Mode, RoutePlan, RouterDecision
 from app.workspace import git
 
-ANSWER_PROMPT = """You are H.E.X Mind, an AI pair programmer inside the developer's IDE.
+ANSWER_PROMPT = """You are the PM (project manager) of the H.E.X Mind agent team, talking with the
+user in the app's chat. You know the project and its missions from the context below.
 Answer the developer's latest message using the project context below. File contents in the
 context were read from disk just now and are the source of truth; earlier messages may be out
 of date. Reference files by path. If the context does not contain what you need, say which
@@ -61,6 +64,18 @@ _INVALID_ROUTER = RouterDecision(
     requires_planning=True,
     requires_review=True,
 )
+
+
+# The chat is answered by the PM (D71): its model chain from Models & Keys, recorded under its name.
+CHAT_PERSONA = "pm"
+
+
+async def chat_context(session: Any) -> CallContext:
+    """The PM's route when the PM has a model chosen; otherwise the global provider order."""
+    route = await route_for(session, CHAT_PERSONA)
+    if route is None:
+        return CallContext()
+    return CallContext(route=route, persona_id=CHAT_PERSONA)
 
 
 def _router_fallback(errors: list[str]) -> RouterDecision:
@@ -138,8 +153,12 @@ class ConversationAgent(BaseAgent):
                 message=turn["content"],
                 exclude_message_id=turn["message_id"],
             )
+            self._answer_llm.use_context(await chat_context(session))
         turn["context_sources"] = bundle.sources()
-        yield state_event(self, ctx, context_text=bundle.render(), mode=turn["mode"])
+        # The current message is left out of the history (no duplicate), so it is added here: the
+        # router and the answer must see the question itself, not only the project around it.
+        context_text = f"{bundle.render()}\n\n### The user's latest message\n{turn['content']}"
+        yield state_event(self, ctx, context_text=context_text, mode=turn["mode"])
 
         # 2. Router (ADK LlmAgent, Pydantic output) -> 3. policy (deterministic).
         async for event in router.run_async(ctx):
@@ -185,7 +204,8 @@ class ConversationAgent(BaseAgent):
 
         # 4. Branch on the policy's route.
         if plan.route == "answer":
-            self._answer_llm._ctx = CallContext(complexity=plan.complexity)
+            # Keep the PM's route (set with the context above) and add the task's complexity.
+            self._answer_llm.use_context(replace(self._answer_llm.ctx, complexity=plan.complexity))
             try:
                 async for event in answer.run_async(ctx):
                     yield event

@@ -83,6 +83,10 @@ class HexAdkLlm(BaseLlm):
     def ctx(self) -> CallContext:
         return self._ctx
 
+    def use_context(self, ctx: CallContext) -> None:
+        """Change who later calls are made for (for example a persona route found after start)."""
+        self._ctx = ctx
+
 
 def to_provider_request(llm_request: LlmRequest, purpose: Purpose, max_tokens: int) -> LLMRequest:
     config = llm_request.config
