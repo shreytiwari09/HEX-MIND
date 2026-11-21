@@ -1,381 +1,314 @@
 <div align="center">
 
-# 🐝 H.E.X Mind
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="design/logo/lockup-dark.png">
+  <img src="design/logo/lockup-light.png" alt="H.E.X Mind" width="340">
+</picture>
 
-**Hivemind Execution X: a desktop IDE where a team of AI agents plans, codes, tests and reviews your changes, while you watch them work live.**
+### Your AI software team, on your own computer.
 
-![Orchestration](https://img.shields.io/badge/orchestration-Google%20ADK-4285F4)
-![Workers](https://img.shields.io/badge/workers-CrewAI-FF5A50)
-![Protocol](https://img.shields.io/badge/agents%20talk%20via-A2A-1F7A70)
-![Tools](https://img.shields.io/badge/tools-MCP-2B3A67)
-![Status](https://img.shields.io/badge/status-phase%20P2%20of%208-F2A900)
+Describe an idea. A PM plans it, engineers build it, QA and security check it in a sandbox,<br>
+and you review the result before a single file of yours changes.
 
-[Why](#-why-this-exists) · [Architecture](#-architecture) · [How a run works](#-how-a-run-works) · [Agents](#-the-agents) · [Requirements](#-requirements-coverage) · [Quick start](#-quick-start) · [Try the demo](#-try-the-demo) · [Reference](#-reference)
+![License: MIT](https://img.shields.io/badge/license-MIT-6d73f2)
+![Platforms](https://img.shields.io/badge/runs%20on-macOS%20·%20Windows%20·%20Linux-3a4256)
+![Google ADK](https://img.shields.io/badge/orchestration-Google%20ADK-4285F4)
+![CrewAI](https://img.shields.io/badge/agents-CrewAI-FF5A50)
+![A2A](https://img.shields.io/badge/agents%20talk%20via-A2A-1F7A70)
+![MCP](https://img.shields.io/badge/tools-MCP-2B3A67)
+
+[What it does](#what-it-does) · [Install](#install) · [First mission](#your-first-mission) · [How it runs](#where-does-the-code-run) · [Architecture](#architecture) · [Agents](#the-agent-team) · [Scope and safety](#agentic-scope-and-safety) · [Compared](#how-it-compares) · [Status](#status-and-roadmap)
+
+<br>
+
+<img src="docs/images/project.webp" alt="H.E.X Mind with a project open: file explorer, Monaco editor and the agent chat, where the user ran a calculator in the sandbox" width="900">
 
 </div>
 
 ---
 
-## 🎯 Why this exists
+## What it does
 
-Most AI coding tools are a single agent doing everything: planning, writing and checking its own work. That causes four problems:
+Most AI coding tools are one agent doing everything: planning, writing, and grading its own work. H.E.X Mind is a **team**. Each member has one job, its own model, its own skills, and nobody marks their own homework.
 
-| Problem | How H.E.X Mind answers it |
+| You say | What happens |
 |---|---|
-| **Context overload.** One agent's context window fills up on big tasks. | Specialist agents (Planner, Coder, Reviewer) share a **Blackboard** of tasks. |
-| **No independent review.** The agent that wrote the code also judges it. | An independent **ADK Reviewer**. Results come from git and the sandbox, never from agent claims. |
-| **No visibility.** When it fails, you don't know why. | A live **Observability view** with an A2A explorer. |
-| **Unsafe and unmeasured.** AI-written code runs on your machine, and there is no fair way to compare setups. | An isolated **Git worktree**, a **no-network sandbox**, and a **14-task benchmark** with hidden tests. |
+| *"Build a Streamlit calculator with tests."* | The **PM** asks what it needs, then splits the idea into milestones and features with a contract for each. |
+| | **Engineers** (backend, frontend, data, designer, DevOps) build each feature in an isolated copy of your project. |
+| | **QA** writes acceptance tests from the contract *before* the code exists; **Reviewer** and **Security** check the diff. |
+| | Every check (install, tests, acceptance) runs in a **Docker sandbox**. Results come from the sandbox and git, never from what an agent claims. |
+| *"run it"* | H.E.X starts the app in the sandbox and posts a **localhost link** in the chat. A command-line program runs right in the chat: *"run 2 + 3"*. |
+| *Apply* | Only now do your files change, in one commit you can revert. |
 
-## ✨ What you get
+**Highlights**
 
-- 💬 **Ask / Edit / Auto chat.** Ask answers from your files, Edit starts an agent run, and Auto lets a Router decide.
-- 🧠 **Two frameworks, one protocol.** Google ADK orchestrates, CrewAI crews do the work, and they talk over A2A across a real process boundary.
-- 🛡️ **Safe by default.** Agents work in an isolated copy. Your files are untouched until you approve the diff.
-- 🔭 **Live observability.** Watch the task board, agents, framework callbacks and A2A messages as they happen.
-- 🔁 **Model fallback.** Groq, then Gemini, then local Ollama, with every fallback logged.
+- 🧠 **Any model, per team member.** OpenAI, Anthropic, Gemini, Groq, DeepSeek, Mistral, xAI, NVIDIA, OpenRouter, Ollama (local) or any OpenAI-compatible endpoint. **Auto** picks a model for each role from what *your* account can call, measured: free first, refused never, speed and rate limits shown.
+- 🛡️ **Safe by default.** Agents work in a git worktree; generated code only runs in a hardened container; API keys never reach the sandbox, the UI, logs or git.
+- 🔭 **Full observability.** Live task board, agent topology (ADK → A2A → CrewAI), every model call with tokens, cost and latency, and a trace per run.
+- 🧩 **Skills and plugins.** 28 built-in skills (SKILL.md), install more from GitHub (Claude and Codex skills work), and attach MCP servers per team member.
+- ⌨️ **Feels like an IDE.** Monaco editor, file explorer, command palette (<kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd>), keyboard shortcuts, status bar, a terminal into the project's sandbox.
+- 📏 **Measured, not claimed.** A built-in evaluation harness (benchmark missions with hidden tests) to compare models and setups.
 
-> **Status:** phase **P2 of 8** is complete: ADK core, CrewAI crews over A2A, and the observability view with an A2A explorer. See [PRD.md](PRD.md) for the product requirements and plan (v3).
+<table>
+<tr>
+<td width="50%"><img src="docs/images/mission.webp" alt="Mission control: progress, spend, tokens, plan and live output of a finished mission"><br><sub><b>Mission control.</b> Plan, live output, spend and tokens; review, apply or revert.</sub></td>
+<td width="50%"><img src="docs/images/team.webp" alt="Team models: each persona with its model, chosen by Auto with the measured reason"><br><sub><b>Team models.</b> Auto explains each choice with what it measured on your account.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/images/topology.webp" alt="Observability topology: Google ADK orchestration reaching CrewAI crews over A2A"><br><sub><b>Observability.</b> Which framework did what: ADK orchestrates, CrewAI crews work, over A2A.</sub></td>
+<td><img src="docs/images/palette.webp" alt="Command palette listing views and actions with shortcuts"><br><sub><b>Command palette.</b> Every view, action and recent project, one keystroke away.</sub></td>
+</tr>
+</table>
 
 ---
 
-## 🏗️ Architecture
+## Install
+
+H.E.X Mind runs on **macOS, Windows and Linux**. You need four free tools first:
+
+| Tool | Why | Get it |
+|---|---|---|
+| **Node.js 20.12+** | the desktop app | [nodejs.org](https://nodejs.org) |
+| **Git** | agents work in a git copy of your project | [git-scm.com](https://git-scm.com/downloads) |
+| **uv** | runs the Python backend | [docs.astral.sh/uv](https://docs.astral.sh/uv/getting-started/installation/) |
+| **Docker Desktop** (running) | the database and the sandbox | [docker.com](https://www.docker.com/products/docker-desktop/) |
+
+Then:
+
+```bash
+git clone https://github.com/shreytiwari09/HEX-MIND.git
+cd HEX-MIND
+npm run setup     # checks the tools, creates .env with fresh secrets, installs, starts the database
+npm start         # starts the backend and opens the app
+```
+
+`npm run setup` is safe to run again. It never overwrites your `.env` and never prints a secret.
+
+**Prefer a normal app icon?** `npm run package` builds an installer for the computer you run it on (`.dmg` on macOS, `.exe` on Windows, `AppImage` on Linux) in `apps/desktop/release/`. The installer holds the desktop app; start the backend with `npm run backend` before opening it. Builds are not code-signed, so macOS asks you to confirm the first launch (right-click → Open).
+
+**Add a model.** In the app: **Models & Keys → Connections**. Free keys from [Groq](https://console.groq.com) or [Google AI Studio](https://aistudio.google.com) are enough to start; [Ollama](https://ollama.com) runs models fully offline. Then **Team models → Auto → Apply**. Keys are stored in your operating system's key store, never in the repository.
+
+## Your first mission
+
+1. **Open a folder** (<kbd>⌘O</kbd>): an empty one for a new app, or an existing project.
+2. **Missions → New mission.** Describe the idea in a few sentences. The PM may ask a question or two.
+3. **Watch.** Progress appears in the mission screen and in its own chat conversation.
+4. **Try it before you keep it.** When the mission ends, a web app starts automatically and its link appears in chat. Say *"run it"* any time, *"run 12 / 4"* for a command-line program, or *"open terminal"* for a shell in the sandbox.
+5. **Review changes → Apply** (or Discard). Applied work is one commit; **Revert** undoes it.
+
+---
+
+## Where does the code run?
+
+**Everything runs on your computer.** There is no H.E.X server and no account.
 
 ```mermaid
 flowchart LR
-    subgraph Desktop["🖥️ Desktop app (Electron + React)"]
-        UI["Editor · Chat · Diff review"]
-        OBS["Observability view<br/>Blackboard · Agents · Callbacks<br/>Schema checks · Topology · A2A explorer"]
+    subgraph PC["Your computer"]
+        APP["H.E.X desktop app"] --> API["Backend<br/>(Python, localhost only)"]
+        API --> DB[("Database<br/>PostgreSQL in Docker")]
+        API --> SB["Sandbox<br/>Docker containers"]
+        SB --> COPY["Copy of your project<br/>(git worktree)"]
+        COPY -. "only when you click Apply" .-> YOURS["Your project folder"]
     end
-
-    subgraph Backend["⚙️ Backend (FastAPI :8765)"]
-        ADK["Google ADK orchestrator<br/>Router · Answer · Reviewer<br/>Sequential workflow + review Loop"]
-        WK["Worker pool<br/>claims Blackboard tasks"]
-        TH["TelemetryHub<br/>ADK + CrewAI callbacks"]
-        PR["Provider router<br/>retry · fallback · cost log"]
-    end
-
-    subgraph Crews["🤖 CrewAI crew service (:8766)"]
-        PL["Planner crew"]
-        CO["Coder crew"]
-    end
-
-    MCP["🔧 MCP workspace server<br/>the agents' only tool surface<br/>+ path guard"]
-    WT["📁 Git worktree<br/>isolated copy of your project"]
-    SB["📦 Docker sandbox<br/>tests run with no network"]
-    PG[("🗄️ PostgreSQL<br/>tasks · event log · llm_calls")]
-    CH[("🧩 ChromaDB<br/>coding standards · lessons")]
-    LLM["☁️ Groq → Gemini → 🖥️ Ollama"]
-
-    UI -->|"REST + token"| ADK
-    ADK -->|"A2A + trace id"| PL
-    ADK -->|"A2A + trace id"| CO
-    ADK --> WK
-    WK <-->|"atomic claims"| PG
-    PL -->|"posts tasks"| PG
-    CO --> MCP
-    PL --> MCP
-    MCP --> WT
-    ADK -->|"run checks by name"| SB
-    SB --> WT
-    ADK --> PR
-    PL --> PR
-    CO --> PR
-    PR --> LLM
-    ADK -.-> TH
-    Crews -.-> TH
-    TH -->|"typed events"| PG
-    PG -->|"live stream"| OBS
-    PL -.-> CH
+    API -- "prompts + your key, HTTPS" --> LLM["Model providers<br/>(OpenAI, Groq, Gemini…)<br/>or Ollama on your machine"]
 ```
 
-**Reading the diagram**
+- **Your code** stays on your disk. The agents edit a *copy*; your folder changes only when you apply.
+- **What leaves your computer** is only what a model needs to answer: the prompt (task, contracts, relevant file excerpts) sent to the provider *you* chose, with *your* key. With Ollama, nothing leaves at all. Per-project privacy settings can block hosted models entirely.
+- **Generated code** runs only inside Docker containers: no root, no capabilities, read-only system, memory and process limits, only the project folder mounted, and no API keys. Tests run with no network; installs reach package registries only; apps you start can use the internet (like any app you run).
+- **Apps it builds** open at `http://localhost:<port>`: reachable from your browser, not from your network.
 
-| Layer | What it does |
-|---|---|
-| **Desktop app** | Where you work: editor, chat, diff review and the Observability view. |
-| **ADK orchestrator** | The manager. It routes your request, runs the workflow, and reviews the result. |
-| **CrewAI crew service** | The workers. A separate process that serves the Planner and Coder as A2A agents. |
-| **MCP server + worktree** | The only way agents touch files, always inside an isolated copy of your project. |
-| **Docker sandbox** | Runs tests with no network, so untrusted code can't reach anything. |
-| **PostgreSQL + ChromaDB** | The task board, the event log, every model call, and saved standards and lessons. |
-| **Provider router** | Every model call from both frameworks goes through it, with automatic fallback. |
+### And "deploying to the cloud"?
+
+Deploying means running those same parts on rented computers instead of yours, so you can use H.E.X from anywhere and leave missions running with your laptop closed. On **Google Cloud (GCP)** that would look like this (planned as phase P9; **not built yet**):
+
+| Part | On your computer today | On Google Cloud |
+|---|---|---|
+| Backend | Python process on localhost | **Cloud Run** (a container Google starts on demand) |
+| Database | PostgreSQL in Docker | **Cloud SQL** for PostgreSQL |
+| Sandbox | Docker on your machine | Isolated **Cloud Run jobs / GKE** containers, one per check |
+| Your projects | folders on your disk | a **Cloud Storage** bucket or git repository |
+| Keys | OS key store | **Secret Manager** |
+| Screen | the desktop app | the same app pointed at the cloud backend, or a web version |
+
+The trade-offs: it costs money every month (database and compute), you need sign-in so only you can reach it, and your code then lives on Google's servers. Apps H.E.X builds could also be published to a public URL from there (with an explicit *Publish* step). Until then, H.E.X is local-first by design.
 
 ---
 
-## 🔄 How a run works
+## Architecture
+
+```mermaid
+flowchart TB
+    subgraph Desktop["Desktop app (Electron)"]
+        UI["Editor · Explorer · Chat · Missions"]
+        OBS["Observability · Metrics · Experiments"]
+    end
+
+    subgraph Backend["Backend (FastAPI, localhost)"]
+        CHAT["Chat service<br/>Ask / Edit / Auto router · PM answers"]
+        ADK["Google ADK workflow<br/>mission runner · scoping · handoffs"]
+        PR["ProviderRouter<br/>every model call · keys · fallbacks · cost"]
+        AUTO["Auto assigner<br/>measured speed · limits · failures"]
+        APPS["App runner · CLI runner · terminal"]
+        TEL["Telemetry<br/>events · spans · llm_calls"]
+    end
+
+    subgraph Crew["CrewAI crew service"]
+        P["Personas: PM · engineers · QA · reviewer · security · researcher"]
+    end
+
+    MCP["MCP workspace tools<br/>path guard · skills · plugins"]
+    WT["Git worktree<br/>(copy of the project)"]
+    SB["Docker sandbox<br/>install · test · acceptance · run"]
+    DB[("PostgreSQL<br/>missions · runs · events · calls")]
+    LLM["Model providers<br/>or local Ollama"]
+
+    UI -- "REST + token" --> CHAT
+    UI --> ADK
+    ADK -- "A2A (JSON-RPC)" --> P
+    P --> MCP --> WT
+    MCP -- "checks by name" --> SB --> WT
+    CHAT --> PR
+    P --> PR
+    ADK --> PR
+    AUTO --> PR
+    PR --> LLM
+    ADK --> TEL --> DB
+    OBS --> TEL
+    APPS --> SB
+```
+
+- **Two agent frameworks, one protocol.** Google ADK owns the mission workflow (deterministic steps and LLM agents); each persona is a CrewAI crew in a separate service, reached over **A2A**. Neither framework calls a model directly: every call goes through `ProviderRouter`, which picks the connection, applies fallbacks and rate-limit cooldowns, and records tokens, cost and latency.
+- **MCP is the agents' only way to touch files.** Reads and writes are path-guarded to the worktree; checks run by *name* (`install`, `test`, `acceptance`) from the project's run contract, so an agent cannot run arbitrary commands on your machine.
+- **Evidence over claims.** A feature is done when its checks pass in the sandbox; the changed files come from `git diff`, not from the agent's report.
+
+### How a mission runs
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor You
-    participant App as Desktop app
-    participant ADK as ADK orchestrator
-    participant PL as Planner crew (CrewAI)
-    participant BB as Blackboard (PostgreSQL)
-    participant CO as Coder crew (CrewAI)
-    participant MCP as MCP server
-    participant SB as Docker sandbox
-    participant RV as Reviewer (ADK)
+    participant PM as PM (ADK + CrewAI)
+    participant QA
+    participant Eng as Engineer
+    participant SB as Sandbox
+    participant Val as Reviewer + Security
 
-    You->>App: "Add filterTodos…" (Edit mode)
-    App->>ADK: request
-    ADK->>ADK: Router decides: Edit (with confidence)
-    ADK->>ADK: Snapshot files + create Git worktree
-    ADK->>PL: A2A: plan this (run id + trace id)
-    PL->>BB: post tasks
-    loop each task, 2 workers in parallel
-        ADK->>BB: claim a task (atomic, with lease)
-        ADK->>CO: A2A: code this task
-        CO->>MCP: read / write files (path-guarded)
-        ADK->>SB: run the tests (no network)
-        ADK->>RV: diff + test result
-        Note over ADK,RV: changes requested → retry, up to 3 attempts
+    You->>PM: idea
+    PM-->>You: questions (if any)
+    PM->>PM: milestones · features · contracts · run contract
+    loop each milestone
+        PM->>QA: validation contract
+        QA->>SB: acceptance tests written first
+        loop each feature
+            PM->>Eng: feature + contract (+ skills)
+            Eng->>SB: install · test (in the worktree)
+            SB-->>PM: pass / fail with output
+            PM->>Eng: retry with feedback, reassign or escalate
+        end
+        PM->>SB: acceptance check
+        Val->>PM: findings on the milestone diff
     end
-    ADK-->>App: diff waiting for approval
-    App-->>You: Review changes (your real files untouched)
+    PM-->>You: done · app link in chat · Review → Apply
 ```
 
-Every arrow above is recorded as a typed event, which is what the Observability view replays live.
-
 ---
 
-## 🤖 The agents
+## The agent team
 
-**5 AI agents** across two frameworks, plus plain-Python control agents that run no model.
-
-| Agent | Framework | Job |
-|---|---|---|
-| **Router** | Google ADK | Decides Ask, Edit or ask-a-question, with a confidence score |
-| **Answer** | Google ADK | Answers questions from your files in Ask mode |
-| **Planner** | CrewAI | Breaks the request into Blackboard tasks |
-| **Coder** | CrewAI | Edits files through the MCP tools |
-| **Reviewer** | Google ADK | Approves, requests changes, or blocks, citing file and line |
-
-The **control agents** are ADK workflow agents: a `SequentialAgent` for prepare → plan → execute → finalize, a `LoopAgent` for the Coder ⇄ Review loop, and small steps that apply the acceptance rules. **Workers** (`coder_01`, `coder_02`) claim tasks from the Blackboard. They are orchestrator workers, not separate AI agents.
-
----
-
-## ✅ Requirements coverage
-
-The project is graded on 11 requirements. Status today:
-
-| # | Requirement | Status | Where |
+| Member | Role | Skills it starts with | Writes code? |
 |---|---|---|---|
-| 1 | State sharing: Blackboard vs messaging | 🟡 In progress | `app/blackboard/` (messaging mode still to build) |
-| 2 | Tools via MCP (16 tools) | 🟡 In progress | `app/mcp_server/` (6 of 16 live) |
-| 3 | Structured output with Pydantic | 🟢 Met | `app/router/`, `app/agents/roles.py`, `app/events/schema.py` |
-| 4 | Agentic design patterns, compared | 🟡 In progress | `app/orchestration/run.py` (comparison later) |
-| 5 | Monitoring via callbacks | 🟢 Met | `app/telemetry/hub.py` |
-| 6 | A2A between ADK and CrewAI | 🟢 Met | `app/a2a/` |
-| 7 | Only CrewAI + Google ADK | 🟢 Met | `apps/backend/pyproject.toml` |
-| 8 | Guardrails + prompt variants | 🟡 In progress | `app/workspace/`, `app/sandbox/`, `app/context/redact.py` |
-| 9 | Observability: tracing, audit, provenance | 🟡 In progress | `app/events/`, `app/telemetry/` |
-| 10 | End-to-end evaluation | 🟡 In progress | `app/evaluation/benchmarks/` (runner later) |
-| 11 | Cloud deployment | ⚪ Planned | final phase (Google Cloud) |
+| **PM / Tech Lead** | orchestrator | scoping interview, PRD writing, feature decomposition, API contracts, failure handling, escalation | plans and contracts only |
+| **Researcher** | research | deep research, docs research (optional web search) | no |
+| **Backend engineer** | worker | REST APIs, auth basics, backend testing | yes |
+| **Frontend engineer** | worker | React UI, state and data fetching, frontend testing | yes |
+| **Data engineer** | worker | relational schema design, migrations | yes |
+| **Designer** | worker | UI/UX, accessibility, design tokens | yes (UI) |
+| **DevOps (local)** | worker | run contract, Dockerfiles, project layout | yes (setup) |
+| **QA engineer** | validator | acceptance testing | tests only |
+| **Code reviewer** | validator | code review, contract conformance | no |
+| **Security reviewer** | validator | security audit, secrets hygiene | no |
 
-**4 met · 6 in progress · 1 planned.**
+Every member is editable in **Agents**: instructions, skills, plugins (MCP servers), model and a per-mission budget. You can add your own personas.
 
-<details>
-<summary><b>🗺️ Roadmap (phases P1 to P8)</b></summary>
+## Agentic scope and safety
 
-| Phase | Goal | Status |
-|---|---|---|
-| M0 to M4 | Electron shell, database, router, CrewAI agents, Blackboard, sandbox, providers, benchmark set | ✅ done |
-| **P1** | ADK core, TelemetryHub, event schema v2, Observability UI | ✅ done |
-| **P2** | CrewAI crews over A2A, A2A explorer, event schema v3 | ✅ done |
-| P3 | The remaining 10 MCP tools and the messaging backend | next |
-| P4 | Layered guardrails and prompt variants | planned |
-| P5 | Tracing, tamper-proof audit log, provenance | planned |
-| P6 | Evaluation runner and experiments | planned |
-| P7 | Apply, reject and revert changes | planned |
-| P8 | Cloud deployment on Google Cloud | planned |
+**What the agents can do**
 
-</details>
+- Read and write files **inside the mission's worktree** (a git copy of your project).
+- Run the project's named checks (`install`, `test`, `acceptance`, `typecheck`, `lint`) **in the sandbox**.
+- Load skills and call the MCP plugins you attached to them.
+- Search the web, only the Researcher and only when you turn on *Advanced research*.
 
----
+**What they cannot do**
 
-## 🚀 Quick start
+- Touch your project folder (that takes your *Apply*), or any path outside the worktree.
+- Run arbitrary shell commands on your computer, see your API keys, or reach the network from tests.
+- Mark their own work done: completion is decided by sandbox results and validators.
 
-**You need:** Node.js 20+, Python 3.11+ with [uv](https://docs.astral.sh/uv/), Docker Desktop, Git, and [Ollama](https://ollama.com) (`ollama pull qwen2.5-coder:7b` and `ollama pull nomic-embed-text`). Free [Groq](https://console.groq.com) and [Gemini](https://aistudio.google.com) keys are optional but recommended, because local models alone give noticeably weaker code.
+**Where you stay in charge**
 
-**1. Install and configure**
+- Answering the PM's scoping questions, and approving its plan before the team builds.
+- *Needs* the team raises (a missing key, a decision) wait for you.
+- Review → Apply / Discard / Revert. Budgets per persona and per mission stop spending.
 
-```sh
-npm install                          # also downloads the Electron binary
-uv --directory apps/backend sync
-
-cp .env.example .env
-python -c "import secrets; print(secrets.token_urlsafe(32))"   # paste into HEXMIND_API_TOKEN in .env
-```
-
-**2. Start the services**
-
-```sh
-npm run db:up                        # PostgreSQL
-npm run db:migrate                   # create the tables
-docker pull node:22-alpine           # sandbox image
-```
-
-**3. Run it** (two terminals)
-
-```sh
-npm run dev:backend   # backend on :8765, and it starts the crew service on :8766
-npm run dev           # the desktop app
-```
-
-> ⚠️ If Electron exits at once with `Cannot read properties of undefined (reading 'whenReady')`, your terminal has `ELECTRON_RUN_AS_NODE=1` set (editor terminals often do). Unset it, for example `env -u ELECTRON_RUN_AS_NODE npm run dev`.
+Third-party skills and plugins are treated as untrusted: they are scanned, shown before install, and run with the same limits.
 
 ---
 
-## 🎬 Try the demo
+## How it compares
 
-1. In the app, click **Open folder** and choose a small Git project (the demo uses a to-do library).
-2. Set the chat to **Edit** and send:
+A November 2026 survey of 17 tools ([full report with sources](research_notes/Agent%20coding%20tools%20gap%20analysis.md)):
 
-   > Create src/filter.js exporting filterTodos(todos, filter) where filter is "all", "active" (not done) or "done"; any other value throws an Error "unknown filter". Also export FILTERS = ["all", "active", "done"]. Add tests in src/filter.test.js.
+| | H.E.X Mind | App builders (Lovable, Bolt, Replit, v0) | Cloud agents (Devin, Copilot agent, Cursor, OpenHands) | IDE / CLI agents (Claude Code, Cline, Aider, Kiro) |
+|---|---|---|---|---|
+| Fixed team of roles, model per role from any provider | ✅ | ❌ | ❌ | partly (subagents) |
+| QA writes acceptance tests first; separate security review | ✅ | ❌ | ❌ | ❌ |
+| Your files change only on approval; code runs in a sandbox | ✅ | hosted copy | branch / PR | varies |
+| Per-call tokens, cost and latency | ✅ | credits | partly | partly |
+| Runs locally, no account | ✅ | ❌ | ❌ | ✅ |
+| Live preview pane, visual edits | ❌ (localhost link) | ✅ | partly | partly |
+| One-click publish to a public URL | ❌ (planned, P9) | ✅ | Cursor only | ❌ |
+| Built-in database, sign-in, payments | ❌ | ✅ | ❌ | ❌ |
 
-3. Open the **Observability** view and watch the run:
+## Status and roadmap
 
-| Tab | What you will see |
-|---|---|
-| **Blackboard** | The Planner's tasks, and a worker claiming each one |
-| **Agents** | Each agent's state, with ADK and CrewAI badges, and failures marked |
-| **Callbacks** | The framework hooks firing live |
-| **A2A explorer** | Agent Cards and the request and response lanes, with a shared trace id |
-| **Schema checks** | Every model reply validated against its expected form |
-| **Topology** | The orchestration pattern |
+Built and tested (1,000+ backend tests, ~290 desktop tests): phases P1–P8 of the [PRD](PRD.md), including missions, team models with Auto, skills and plugins, observability, metrics and the evaluation harness. Live missions have run end to end on free models.
 
-4. When the run reaches `awaiting_approval`, open **Review changes** to see the diff. Your real files are untouched.
+**Not built yet**, most valuable first:
+
+1. **Publish to a public URL** and cloud hosting (P9, see above).
+2. A **live preview pane** inside the app, and click-to-change on it.
+3. **Browser tests** by QA with screenshots as proof.
+4. **Image / screenshot / Figma input** for the designer.
+5. One-click **undo to a milestone** (today: Revert undoes the whole applied mission).
+6. A terminal built into the app (today it opens your system terminal, inside the sandbox).
 
 ---
 
-## 📚 Reference
+## Development
 
-<details>
-<summary><b>⚙️ Configuration</b></summary>
-
-Everything is set through `HEXMIND_*` variables in `.env` (see [.env.example](.env.example)).
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `HEXMIND_API_TOKEN` | required | shared secret between the app, the backend and the crew service |
-| `HEXMIND_DATA_DIR` | `%LOCALAPPDATA%\hexmind` | run worktrees, memory store, crew storage. Point it at a roomy drive if your system drive is small |
-| `HEXMIND_PROVIDER_ORDER` | `["groq","gemini","ollama"]` | fallback order |
-| `HEXMIND_CREW_SERVICE_AUTOSTART` | `true` | start the CrewAI crew service with the backend in development |
-| `HEXMIND_OTLP_ENDPOINT` | unset | optional OpenTelemetry export target |
-| `HEXMIND_REVIEW_MAX_ROUNDS` | `2` | review and retry rounds before a run stops |
-
-</details>
-
-<details>
-<summary><b>🧠 Model providers and fallback</b></summary>
-
-Each model call tries the providers in `HEXMIND_PROVIDER_ORDER`: Groq, then Gemini, then Ollama.
-
-| Provider | Setup |
-|---|---|
-| Ollama (local) | `ollama pull qwen2.5-coder:7b`. No key needed. Used when the hosted providers aren't configured or have failed. |
-| Groq | Put `HEXMIND_GROQ_API_KEY=...` in `.env`. The model is `HEXMIND_GROQ_MODEL`. |
-| Gemini | Put `HEXMIND_GEMINI_API_KEY=...` in `.env`. The model is `HEXMIND_GEMINI_MODEL`. |
-
-A provider without a key is skipped. A provider that hits its quota, or whose key is rejected, falls back to the next one straight away and is skipped for a cooldown; the run records a `provider_fallback` event. **Settings** (the gear in the activity bar) shows each provider's status, cooldown and remaining rate limit, with a **Test** button. Keys stay in the backend and are never shown.
-
-Cost estimates come from `apps/backend/app/providers/pricing.yaml`. Those prices are **unverified**, so check them against the providers' pricing pages before reporting costs.
-
-Check a provider end to end (the call is logged in `llm_calls`):
-
-```sh
-curl -X POST http://127.0.0.1:8765/api/providers/ollama/test -H "Authorization: Bearer <token>"
+```bash
+npm start                 # backend + desktop app (from source)
+npm run dev:backend       # backend only (FastAPI on 127.0.0.1:$HEXMIND_PORT)
+npm run dev               # desktop app only
+npm test                  # desktop + backend tests
+npm run typecheck && npm run lint:backend
+npm run package           # installer for this OS
 ```
 
-</details>
-
-<details>
-<summary><b>🧪 Tests and benchmarks</b></summary>
-
-```sh
-npm test               # Vitest (renderer) + pytest (backend; needs `npm run db:up`)
-npm run typecheck      # tsc for main/preload and renderer
-npm run build          # electron-vite production build
-npm run lint:backend   # ruff
+```
+apps/desktop/    Electron main (window, app:// protocol), preload (3 calls), React renderer
+apps/backend/    FastAPI: orchestration (ADK), agents (CrewAI), a2a, providers, router,
+                 mcp_server, sandbox, workspace, missions, catalog, telemetry, evaluation
+design/logo/     logo, app icon and lockups (SVG + PNG)
+docs/standards/  coding standards the agents load at runtime
+PRD.md           product requirements and every decision (§21)
 ```
 
-The full backend suite takes about 10 minutes (256 passed, 2 skipped at P2). Do not run two pytest sessions at once, because they share the test database. Docker-based tests need free disk space on the system drive. The two symlink-escape tests are skipped on Windows unless Developer Mode is enabled.
+Hard rules for contributors are in [CLAUDE.md](CLAUDE.md): CrewAI and Google ADK only, every model call through `ProviderRouter`, keys never leave the backend, generated code is untrusted.
 
-The event contract lives in `apps/backend/app/events/schema.py`. After changing it, run `npm run gen:events` to regenerate `apps/desktop/src/renderer/src/generated/`. A backend test fails if the committed schema is out of date.
+## License
 
-**Benchmark set:** `apps/backend/app/evaluation/benchmarks/` holds 14 tasks on a small to-do codebase, each with a hidden acceptance test and a reference solution.
-
-```sh
-cd apps/backend
-uv run python -m app.evaluation.benchmarks validate   # each hidden test fails on the seed and passes on the reference
-uv run python -m app.evaluation.benchmarks sync       # load the tasks into eval_tasks
-```
-
-Routing labels for the evaluation are described in [docs/routing-labels.md](docs/routing-labels.md).
-
-</details>
-
-<details>
-<summary><b>📁 Project layout</b></summary>
-
-```
-apps/
-  desktop/   Electron + React + TypeScript (electron-vite)
-    src/main/       main process: window, IPC (folder picker), navigation guards
-    src/preload/    contextBridge API (api.ts is the shared contract)
-    src/renderer/   React renderer: features/{explorer,editor,chat,runs,observability,settings,workspace}
-  backend/   FastAPI (uv)
-    app/api/            REST routes (health, projects/files, runs/events, providers, a2a)
-    app/orchestration/  ADK orchestrator, run lifecycle, conversation flow
-    app/a2a/            CrewAI crew service (python -m app.a2a) and A2A client/protocol
-    app/agents/         roles, tools, MCP bridge, ADK LLM adapter
-    app/blackboard/     task board with atomic claims and leases
-    app/telemetry/      TelemetryHub (ADK callbacks and CrewAI hooks), tracing
-    app/providers/      provider interface, Ollama/Groq/Gemini adapters, ProviderRouter
-    app/router/         Ask/Edit/Auto routing with schema-validated output
-    app/mcp_server/     the agents' only tool surface
-    app/sandbox/        Docker check runner and project profile
-    app/memory/         ChromaDB coding standards and lessons
-    app/workspace/      path guard and file service (the only filesystem access)
-    app/events/         per-run, gap-free event log and schema
-    app/evaluation/     benchmark task set with hidden acceptance tests
-    alembic/            migrations
-docs/                 coding standards loaded into memory, routing-label guide
-spikes/adk_a2a/       the ADK / A2A / MCP / OpenTelemetry spikes that de-risked P1 and P2
-PRD.md                the single product requirements document and plan
-research_notes/       research report and the notes behind it
-docker-compose.yml    PostgreSQL (127.0.0.1:5433) + test database
-```
-
-</details>
-
-<details>
-<summary><b>🔒 Security baseline</b></summary>
-
-- The renderer runs with `contextIsolation`, `sandbox` and no `nodeIntegration`. Its only API is `window.hex.getBackend()`, `appInfo()` and `pickWorkspace()`.
-- IPC handlers reject calls from frames other than the app's own page. New windows are denied, and only `https:` links open externally.
-- The backend binds to loopback only, and every route requires `Authorization: Bearer <HEXMIND_API_TOKEN>`. CORS allows only the renderer origin.
-- All file access goes through the backend path guard. It rejects `..`, absolute, drive and UNC paths, alternate data streams, Windows device names, trailing dots and spaces, and symlink escapes, and it refuses writes under `.git/`.
-- Checks run in a Docker container with no network, limited CPU and memory, a time limit and a read-only root, using allow-listed images only.
-- Saves are compare-and-swap on a content hash, so a save never silently overwrites a newer version on disk.
-- Secrets live in `.env`, which is git-ignored. Only `.env.example` is committed.
-
-</details>
-
-<details>
-<summary><b>⚠️ Known issues</b></summary>
-
-- `npm audit` reports DOMPurify advisories against `monaco-editor@0.57.0`. Monaco bundles its own copy of DOMPurify 3.4.15 (used to sanitize hover markdown), so npm overrides don't affect the code that runs. The affected modes (`IN_PLACE`, `SAFE_FOR_TEMPLATES`, XHTML parsing) are not the ones Monaco uses, and the editor only renders local workspace content. Upgrade Monaco when a patched release is available.
-- `a2a-sdk` is pinned to `~=0.3.10` because CrewAI's A2A code breaks on `a2a-sdk` 1.x, although the A2A protocol itself is at v1.0.
-- Free-tier model limits are tight. Groq can hit its token limit after a handful of agent calls, and the local fallback model writes weaker code.
-
-</details>
-
-<details>
-<summary><b>🔬 Research</b></summary>
-
-[Multi agent coding project comparison.md](research_notes/Multi%20agent%20coding%20project%20comparison/Multi%20agent%20coding%20project%20comparison.md) compares H.E.X Mind with OpenHands, SWE-agent, Aider, Cline, MetaGPT, ChatDev and the observability tools, and ranks what to adopt next. The notes behind it are in `research_notes/`. Its findings were produced without reading this repository's code, so treat its "missing feature" claims as hypotheses to verify.
-
-</details>
+[MIT](LICENSE) © 2026 Shrey Tiwari
