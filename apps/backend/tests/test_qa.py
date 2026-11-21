@@ -350,7 +350,9 @@ async def test_qa_catches_a_deliberate_bug_names_the_criterion_and_the_builder_f
 async def test_without_acceptance_tests_qa_checks_nothing_and_never_passes(
     app: FastAPI, client: httpx.AsyncClient, tmp_path: Path
 ) -> None:
-    root = repo_with(tmp_path, {**CONTRACT, "acceptance": None})
+    # A test runner the app does not recognise: it cannot work out an acceptance command itself
+    # (for Node's own runner it would, see test_run_contract), so QA has nothing to run.
+    root = repo_with(tmp_path, {**CONTRACT, "test": "sh -c 'node --test'", "acceptance": None})
     use_adapter(app, ScriptedAdapter(Validators(qa_script(QA_TESTS))))
     mission = await new_mission(client, root, qa_plan())
 

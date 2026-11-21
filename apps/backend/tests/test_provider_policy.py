@@ -220,6 +220,16 @@ async def test_hosted_request_and_response_mapping() -> None:
         (401, {}, "invalid api key", "auth", None),
         (400, {}, "API key not valid. Please pass a valid API key.", "auth", None),
         (404, {}, "model not found", "model_unavailable", None),
+        # A plan or wallet that does not cover this model: only this model is out, the key is
+        # fine (free models on the same key still answer), so the key must not be benched.
+        (
+            402,
+            {},
+            "No active plan was found on this account (API key thk_live_...abcd) and the "
+            "wallet balance can't cover this model",
+            "model_unavailable",
+            None,
+        ),
         (
             429,
             {"retry-after": "12"},

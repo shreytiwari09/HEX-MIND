@@ -18,7 +18,7 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, Field, ValidationError
 
-from app.sandbox.contract import CONTRACT_PATH, load_contract
+from app.sandbox.contract import CONTRACT_PATH, RunContract, load_contract
 
 PROFILE_PATH = ".hexmind/profile.yaml"
 _CHECK_NAME = r"^[a-z][a-z0-9_-]{0,31}$"
@@ -55,6 +55,29 @@ class _ProfileFile(BaseModel):
     checks: dict[str, str]
 
 
+NODE_ACCEPTANCE = "node --test 'tests/acceptance/**/*.test.{js,mjs,cjs}'"
+_ACCEPTANCE_DIR = "tests/acceptance"
+
+
+def node_acceptance(worktree: Path, contract: RunContract) -> dict[str, str]:
+    """An `acceptance` check for a contract that leaves it out, only when QA's tests exist and the
+    project's own tests use Node's built-in runner, which then also runs QA's tests. Any other
+    runner gets nothing: QA reports the missing check instead of running the wrong tool."""
+    tests = worktree / _ACCEPTANCE_DIR
+    if contract.acceptance or not tests.is_dir() or not any(tests.rglob("*.test.*")):
+        return {}
+    command = contract.test or ""
+    if command in ("npm test", "npm t", "npm run test"):
+        try:
+            scripts = json.loads((worktree / "package.json").read_text(encoding="utf-8"))
+            command = str(scripts.get("scripts", {}).get("test", ""))
+        except (OSError, ValueError, AttributeError):
+            return {}
+    if command == "node --test" or command.startswith("node --test "):
+        return {"acceptance": NODE_ACCEPTANCE}
+    return {}
+
+
 def load_profile(workspace: Path, worktree: Path, allowed_images: list[str]) -> Profile:
     """The checks a project defines, from the first of: the run contract `.hex/project.json`
     (PRD §9.6), the user's explicit `.hexmind/profile.yaml`, or what is detected from the
@@ -68,7 +91,7 @@ def load_profile(workspace: Path, worktree: Path, allowed_images: list[str]) -> 
             )
         return Profile(
             image=image,
-            checks=contract.checks(),
+            checks={**node_acceptance(worktree, contract), **contract.checks()},
             source=CONTRACT_PATH,
             dockerfile=contract.dockerfile is not None,
             network_checks=("install",) if contract.network.install == "allowlist" else (),

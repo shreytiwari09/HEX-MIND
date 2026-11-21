@@ -268,7 +268,11 @@ def _classify(provider: str, response: httpx.Response, secret: str | None = None
         text = text.replace(secret, REDACTED)
     retry_after = _retry_after(response)
     kind: ErrorKind
-    if status in (401, 403) or "API key" in body:
+    if status == 402:
+        # The plan or wallet does not cover this model. Only this model is out: the key itself
+        # works (free models on it still answer), so it is not benched like a bad key.
+        kind = "model_unavailable"
+    elif status in (401, 403) or "API key" in body:
         kind = "auth"
     elif status == 404:
         kind = "model_unavailable"

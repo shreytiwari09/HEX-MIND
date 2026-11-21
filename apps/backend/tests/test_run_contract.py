@@ -138,6 +138,58 @@ def test_the_contract_beats_the_user_profile_which_beats_detection(tmp_path: Pat
         load_profile(workspace, worktree, IMAGES)
 
 
+NODE_ACCEPTANCE = "node --test 'tests/acceptance/**/*.test.{js,mjs,cjs}'"
+
+
+def _with_acceptance_tests(tmp_path: Path, contract: dict[str, Any], package: str | None = None):
+    workspace, worktree = tmp_path / "workspace", tmp_path / "worktree"
+    workspace.mkdir()
+    (worktree / "tests" / "acceptance").mkdir(parents=True)
+    (worktree / "tests" / "acceptance" / "VC-1.test.js").write_text("// QA's test\n")
+    if package is not None:
+        (worktree / "package.json").write_text(package)
+    write_contract(worktree, contract)
+    return load_profile(workspace, worktree, IMAGES).checks
+
+
+@pytest.mark.parametrize(
+    ("test_command", "package"),
+    [
+        ("node --test", None),
+        ("npm test", '{"scripts": {"test": "node --test"}}'),
+        ("npm run test", '{"scripts": {"test": "node --test --test-reporter=spec"}}'),
+    ],
+)
+def test_node_projects_with_acceptance_tests_but_no_acceptance_check_get_one(
+    tmp_path: Path, test_command: str, package: str | None
+) -> None:
+    checks = _with_acceptance_tests(tmp_path, {**CONTRACT, "test": test_command}, package)
+
+    assert checks["acceptance"] == NODE_ACCEPTANCE
+
+
+@pytest.mark.parametrize(
+    ("contract", "package"),
+    [
+        # Another test runner: Node's would not understand its tests, so nothing is guessed.
+        ({**CONTRACT, "test": "npx vitest run"}, None),
+        ({**CONTRACT, "test": "npm test"}, '{"scripts": {"test": "vitest run"}}'),
+        ({**CONTRACT, "test": "npm test"}, "{not json"),
+        ({k: v for k, v in CONTRACT.items() if k != "test"}, None),
+    ],
+)
+def test_no_acceptance_check_is_guessed_for_other_runners(
+    tmp_path: Path, contract: dict[str, Any], package: str | None
+) -> None:
+    assert "acceptance" not in _with_acceptance_tests(tmp_path, contract, package)
+
+
+def test_a_contracts_own_acceptance_check_is_kept(tmp_path: Path) -> None:
+    checks = _with_acceptance_tests(tmp_path, {**CONTRACT, "acceptance": "npm run accept"})
+
+    assert checks["acceptance"] == "npm run accept"
+
+
 def test_agents_can_read_hex_files_but_only_write_the_paths_they_are_given(tmp_path: Path) -> None:
     (tmp_path / ".hex" / "mission").mkdir(parents=True)
 
