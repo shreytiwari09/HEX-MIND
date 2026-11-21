@@ -142,6 +142,40 @@ async def test_tools_without_arguments_are_sent_in_a_form_groq_accepts() -> None
     assert tools[0]["function"]["parameters"] == {"type": "object", "required": []}
 
 
+async def test_optional_tool_arguments_stay_optional_even_from_a_strict_definition() -> None:
+    """CrewAI sends tools in strict mode: every property listed as required, defaults and all.
+    Groq then refused a model's `load_skill` call that left out the optional `file` (live run,
+    HTTP 400 three times in a row). An argument with a default is not required, and the strict
+    flag (which demands that every property be required) is not sent."""
+    from crewai.utilities.agent_utils import convert_tools_to_openai_schema
+
+    from app.agents.tools import SPECS, McpTool
+
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}], "usage": {}})
+
+    schema, description = SPECS["load_skill"]
+    converted = convert_tools_to_openai_schema(
+        [McpTool(name="load_skill", description=description, args_schema=schema)]
+    )
+    tools = converted[0] if isinstance(converted, tuple) else converted
+    assert tools[0]["function"]["parameters"]["required"] == ["name", "file"]  # what CrewAI sends
+    request = LLMRequest(
+        purpose="coder", messages=[ChatMessage(role="user", content="hi")], tools=tools
+    )
+
+    await _hosted(handler).complete(request)
+
+    [sent] = seen["tools"]
+    assert sent["function"]["parameters"]["required"] == ["name"]
+    assert set(sent["function"]["parameters"]["properties"]) == {"name", "file"}
+    assert "strict" not in sent["function"] and "strict" not in sent
+    assert tools[0]["function"]["parameters"]["required"] == ["name", "file"]  # caller's copy
+
+
 async def test_hosted_request_and_response_mapping() -> None:
     seen: dict = {}
 

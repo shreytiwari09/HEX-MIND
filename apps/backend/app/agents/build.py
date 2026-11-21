@@ -23,7 +23,17 @@ from app.skills.registry import Skill, skill_index
 # Earlier handoffs shown to a worker: the most recent ones, to keep its context small.
 MAX_HANDOFFS_SHOWN = 8
 
-REPORT_SCHEMA = json.dumps(AgentReport.model_json_schema()["properties"])
+# An example, not the JSON schema: shown the schema (`"title"`, `"type"`, `"items"`), a model
+# copied that shape into its answer and every attempt failed on the report (live run, D67).
+REPORT_SCHEMA = json.dumps(
+    AgentReport(
+        implemented=["what you changed, one short line each"],
+        left_undone=["anything you did not finish (empty list if none)"],
+        issues_found=["problems you noticed (empty list if none)"],
+        procedures_followed=True,
+        notes_for_next=["what the next agent should know (empty list if none)"],
+    ).model_dump()
+)
 REPORT_EXPECTED = (
     "A JSON object with implemented, left_undone, issues_found, procedures_followed and "
     "notes_for_next."
@@ -161,7 +171,8 @@ def feature_prompt(
         lines += ["", "You can read the project but not change it."]
     lines += [
         "",
-        "Your final answer must be only a JSON object with these fields: " + REPORT_SCHEMA,
+        "Your final answer must be only a JSON object shaped like this example (lists of plain "
+        "strings, procedures_followed true or false): " + REPORT_SCHEMA,
         "Report only what you observed. The orchestrator records the files changed and the "
         "commands run itself.",
     ]

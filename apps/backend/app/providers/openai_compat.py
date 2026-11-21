@@ -186,6 +186,11 @@ def _clean_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     request with HTTP 400 ("'required' present but 'properties' is missing"), so every call that
     offers such a tool (git_status, list_features) failed there. Fix: an object schema always
     has `properties`, and an empty `required` is left out. The caller's request is not changed.
+
+    The framework also sends tools in strict mode, which lists every property as required,
+    even one with a default (`load_skill`'s `file`). Groq then refused a model's call that left
+    the optional argument out. So a property with a default is not required, and the `strict`
+    flag (which demands that every property be required) is not sent.
     """
     cleaned: list[dict[str, Any]] = []
     for tool in tools:
@@ -196,11 +201,21 @@ def _clean_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
         parameters = dict(function.get("parameters") or {"type": "object"})
         if parameters.get("type", "object") == "object":
             parameters["type"] = "object"
-            parameters["properties"] = dict(parameters.get("properties") or {})
-            if not parameters.get("required"):
+            properties = dict(parameters.get("properties") or {})
+            parameters["properties"] = properties
+            required = [
+                name
+                for name in parameters.get("required") or []
+                if not (isinstance(properties.get(name), dict) and "default" in properties[name])
+            ]
+            if required:
+                parameters["required"] = required
+            else:
                 parameters.pop("required", None)
         parameters = _without_titles(parameters)
-        cleaned.append({**tool, "function": {**function, "parameters": parameters}})
+        function = {k: v for k, v in function.items() if k != "strict"}
+        outer = {k: v for k, v in tool.items() if k != "strict"}
+        cleaned.append({**outer, "function": {**function, "parameters": parameters}})
     return cleaned
 
 

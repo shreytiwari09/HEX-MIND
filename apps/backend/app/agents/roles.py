@@ -62,9 +62,45 @@ def parse_json_output(raw: str, model: type[T]) -> T:
     if not candidate:
         raise OutputError("no JSON object found in the answer")
     try:
-        return model.model_validate(json.loads(candidate))
-    except (json.JSONDecodeError, ValidationError) as exc:
+        data = json.loads(candidate)
+    except json.JSONDecodeError as exc:
         raise OutputError(str(exc)[:500]) from exc
+    try:
+        return model.model_validate(data)
+    except ValidationError as exc:
+        unwrapped = _unwrap_schema_echo(data)
+        if unwrapped is not None:
+            with contextlib.suppress(ValidationError):
+                return model.model_validate(unwrapped)
+        raise OutputError(str(exc)[:500]) from exc
+
+
+def _unwrap_schema_echo(data: Any) -> dict[str, Any] | None:
+    """Some models copy the shape of the JSON schema they were shown and put their answer inside
+    it: `{"title": "Implemented", "type": "array", "items": ["..."]}` for a list, or `{"value": x}`.
+    Take the answer out of such fields; None when nothing looks like that."""
+    if not isinstance(data, dict):
+        return None
+    changed = False
+    out: dict[str, Any] = {}
+    for key, value in data.items():
+        if isinstance(value, dict) and isinstance(value.get("items"), list):
+            out[key], changed = value["items"], True
+        elif (
+            isinstance(value, dict)
+            and "value" in value
+            and value.keys()
+            <= {
+                "value",
+                "title",
+                "type",
+                "description",
+            }
+        ):
+            out[key], changed = value["value"], True
+        else:
+            out[key] = value
+    return out if changed else None
 
 
 # ---------- agents ----------
