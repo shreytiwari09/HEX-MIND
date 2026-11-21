@@ -51,11 +51,15 @@ Most AI coding tools are one agent doing everything: planning, writing, and grad
 
 <table>
 <tr>
-<td width="50%"><img src="docs/images/mission.webp" alt="Mission control: progress, spend, tokens, plan and live output of a finished mission"><br><sub><b>Mission control.</b> Plan, live output, spend and tokens; review, apply or revert.</sub></td>
-<td width="50%"><img src="docs/images/team.webp" alt="Team models: each persona with its model, chosen by Auto with the measured reason"><br><sub><b>Team models.</b> Auto explains each choice with what it measured on your account.</sub></td>
+<td width="50%"><img src="docs/images/next-steps.webp" alt="A finished mission: applied changes, Next steps to prepare the project for GitHub, publish it and deploy it, and the team cards"><br><sub><b>Mission screen.</b> Review, apply or revert; then Next steps: prepare the repository, publish to GitHub, deploy.</sub></td>
+<td width="50%"><img src="docs/images/overview.webp" alt="Observability overview: every step of the run as a plain sentence with who did it"><br><sub><b>Live team view.</b> Who did what and when, from recorded events only. Developer tabs are one switch away.</sub></td>
 </tr>
 <tr>
-<td><img src="docs/images/topology.webp" alt="Observability topology: Google ADK orchestration reaching CrewAI crews over A2A"><br><sub><b>Observability.</b> Which framework did what: ADK orchestrates, CrewAI crews work, over A2A.</sub></td>
+<td><img src="docs/images/team.webp" alt="Team models: each persona with its model, chosen by Auto with the measured reason"><br><sub><b>Team models.</b> Auto explains each choice with what it measured on your account.</sub></td>
+<td><img src="docs/images/topology.webp" alt="Observability topology: Google ADK orchestration reaching CrewAI crews over A2A"><br><sub><b>Topology.</b> Which framework did what: ADK orchestrates, CrewAI crews work, over A2A.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/images/agents.webp" alt="Agent editor: instructions and skills of the PM persona"><br><sub><b>Agents and skills.</b> Every team member's instructions, skills, plugins and model are editable.</sub></td>
 <td><img src="docs/images/palette.webp" alt="Command palette listing views and actions with shortcuts"><br><sub><b>Command palette.</b> Every view, action and recent project, one keystroke away.</sub></td>
 </tr>
 </table>
@@ -273,18 +277,27 @@ A November 2026 survey of 17 tools ([full report with sources](research_notes/Ag
 | One-click publish to a public URL | ❌ (planned, P9) | ✅ | Cursor only | ❌ |
 | Built-in database, sign-in, payments | ❌ | ✅ | ❌ | ❌ |
 
-## Status and roadmap
+## Status and future scope
 
-Built and tested (1,000+ backend tests, ~290 desktop tests): phases P1–P8 of the [PRD](PRD.md), including missions, team models with Auto, skills and plugins, observability, metrics and the evaluation harness. Live missions have run end to end on free models.
+**Built and tested:** 1,029 backend tests and 301 desktop tests pass; phases P1 to P8 of the [PRD](PRD.md) (missions, team models with Auto, skills and plugins, observability, metrics, the evaluation harness), plus a live team view, a terminal into the project's sandbox, running web apps and command-line programs from chat, and one-click preparation and publishing to GitHub. Real missions have run end to end on free models. The macOS installer has been built and opened; the Windows and Linux installers use the same configuration but have not been tried on those systems.
 
-**Not built yet**, most valuable first:
+**Known limits today:** the installer holds the desktop app only (start the backend with `npm run backend`); missions need Git, which H.E.X offers to set up; builds are unsigned; the routing experiment (E6) uses 150 labels written by the assistant, not by people ([D85](PRD.md)).
 
-1. **Publish to a public URL** and cloud hosting (P9, see above).
-2. A **live preview pane** inside the app, and click-to-change on it.
-3. **Browser tests** by QA with screenshots as proof.
-4. **Image / screenshot / Figma input** for the designer.
-5. One-click **undo to a milestone** (today: Revert undoes the whole applied mission).
-6. A terminal built into the app (today it opens your system terminal, inside the sandbox).
+### Future scope
+
+Everything below is deliberately **not built yet**. Each item has a reason in the [PRD](PRD.md) and the research in [`research_notes/`](research_notes/).
+
+| Area | Planned | Why it matters |
+|---|---|---|
+| **Cloud (phase P9)** | Run the backend, database and sandbox on Google Cloud (Cloud Run, Cloud SQL, Secret Manager) with sign-in, a spending cap and a domain; missions that keep running with the laptop closed | Use H.E.X from anywhere; needs billing and sign-in decisions first |
+| **Publishing apps** | One-click deploy to a public URL (Streamlit Community Cloud, Vercel, Netlify, Cloud Run) after an explicit Publish step | Today H.E.X pushes to GitHub and explains deploying; the five app builders in the [comparison](research_notes/Agent%20coding%20tools%20gap%20analysis.md) all host the app |
+| **Preview** | A live preview pane inside the app and click-to-change on it; image, screenshot and Figma input for the designer | The biggest visible gap for non-technical users |
+| **Verification** | Browser tests by QA with screenshots as proof (Playwright); stuck-run detection with automatic replanning | Stronger proof that the app works |
+| **Batteries included** | A database and sign-in that work without setting up accounts; payments; vetted starter templates | Today the user wires these up |
+| **Workflow** | Plan approval as an editable spec; undo to a milestone; best-of-N attempts per feature; resume or fork a run from a checkpoint; later missions as pull requests | Finer control and safer iteration |
+| **Observability** | One run view with tree, timeline and graph sharing a selection; a graph that lights the active agent from recorded events; a built-in terminal | See [Live agent progress UX](research_notes/Live%20agent%20progress%20UX.md) |
+| **Install** | Bundle the Python backend into the installer; code signing for macOS and Windows; auto-update; automatic Git setup; an opt-in "work directly in my folder" mode with the sandbox kept for running code | One download that just runs |
+| **Evaluation** | The scikit-learn baseline and experiment E6 (needs approval of the dependency and, ideally, a human check of the labels); experiments E2 and E3; an LLM judge | Measured, reproducible results |
 
 ---
 

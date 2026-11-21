@@ -65,8 +65,7 @@ const TOOL_VERBS: Record<string, string> = {
   list_files: 'Looking through files',
   list_features: 'Reading the plan',
   git_status: 'Checking changed files',
-  load_skill: 'Reading the skill',
-  run_check: 'Running a check'
+  load_skill: 'Reading the skill'
 }
 
 function firstWord(summary: string | null): string {
@@ -86,9 +85,13 @@ export function stepText(event: AgentEvent): { text: string; tone: Step['tone'] 
     }
     case 'tool_called': {
       const p = event.payload
-      const verb = TOOL_VERBS[p.tool] ?? `Using ${p.tool}`
-      const target = p.tool === 'list_features' || p.tool === 'git_status' ? '' : firstWord(p.summary)
-      return { text: `${verb}${target ? ` ${target}` : ''}${p.ok ? '' : ' (it failed)'}`, tone: p.ok ? 'normal' : 'bad' }
+      const failed = p.ok ? '' : ' (it failed)'
+      const target = firstWord(p.summary)
+      if (p.tool === 'run_check') return { text: `Running the "${target || 'project'}" check${failed}`, tone: p.ok ? 'normal' : 'bad' }
+      const verb = TOOL_VERBS[p.tool]
+      if (!verb) return { text: `Using ${p.tool.replace(/_/g, ' ')}${failed}`, tone: p.ok ? 'normal' : 'bad' }
+      const named = p.tool === 'list_features' || p.tool === 'git_status' || p.tool === 'list_files' ? '' : target
+      return { text: `${verb}${named ? ` ${named}` : ''}${failed}`, tone: p.ok ? 'normal' : 'bad' }
     }
     case 'check_started':
       return { text: `Running "${event.payload.name}" in the sandbox`, tone: 'normal' }

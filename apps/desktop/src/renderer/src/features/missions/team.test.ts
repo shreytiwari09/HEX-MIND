@@ -64,6 +64,15 @@ describe('team activity from real events', () => {
     expect(team[0]).toMatchObject({ id: 'qa', state: 'failed', doing: 'Verdict on m1: fail, 2 findings' })
   })
 
+  it('words tool calls as plain sentences', () => {
+    const say = (tool: string, summary: string, ok = true) =>
+      teamActivity([feature('in_progress', 'backend'), ev('tool_called', 'backend_01', { tool, ok, summary })], true)[0].steps.at(-1)?.text
+    expect(say('run_check', 'test: exit 0')).toBe('Running the "test" check')
+    expect(say('git_diff', 'diff')).toBe('Using git diff')
+    expect(say('write_file', 'app.py: created', false)).toBe('Writing app.py (it failed)')
+    expect(say('list_features', 'scaffold | m1')).toBe('Reading the plan')
+  })
+
   it('formats elapsed time', () => {
     const now = Date.parse('2026-11-22T01:02:05Z')
     expect(ago('2026-11-22T01:02:00Z', now)).toBe('5 s')
