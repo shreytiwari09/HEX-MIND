@@ -77,6 +77,7 @@ def feature_prompt(
     skills: list[Skill] | None = None,
     plugin_tools: list[str] | None = None,
     criteria: list[str] | None = None,
+    files_text: str = "",
 ) -> str:
     """The task the agent works on: the feature spec, then what earlier features left for it,
     a ranked map of the project (`repo_map`, may be empty) and the index of the skills the agent
@@ -127,6 +128,13 @@ def feature_prompt(
             "file before you change it):",
             repo_map,
         ]
+    if files_text:
+        lines += [
+            "",
+            "Current content of the files you are expected to work with (already read for you, "
+            "so do not read them again):",
+            files_text,
+        ]
     if feedback:
         lines += ["", "Your previous attempt was not accepted. Fix this first:", feedback]
     if acceptance:
@@ -142,9 +150,12 @@ def feature_prompt(
     elif persona.kind == "worker":
         lines += [
             "",
-            "Read the relevant files first, then change files only with write_file or "
-            "replace_in_file (code in your answer is discarded), and run the `test` check with "
-            "run_check before you finish. A feature with no file changes is rejected.",
+            "Read only the files you still need. When you need several files, or have several "
+            "independent things to do, ask for all of those tool calls in one step instead of "
+            "one at a time: every step costs time and re-sends everything so far. Change files "
+            "only with write_file or replace_in_file (code in your answer is discarded), and run "
+            "the `test` check with run_check before you finish. A feature with no file changes "
+            "is rejected.",
         ]
     else:
         lines += ["", "You can read the project but not change it."]

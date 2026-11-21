@@ -314,3 +314,20 @@ async def test_the_pm_is_told_to_copy_exact_interfaces_from_the_idea_into_the_pl
     prompt = pm.prompts[0]
     assert "copy them word for word" in prompt
     assert "builders and QA see only the plan" in prompt
+
+
+async def test_the_pm_is_told_to_size_the_plan_to_the_task_and_use_fewer_validators(
+    app: FastAPI, client: httpx.AsyncClient, repo: Path
+) -> None:
+    # Found in the first live mission: a two-function library got 4 milestones, a scaffold,
+    # separate module and test features, and security reviews of a pure calculation.
+    pm = PM(asking("Who uses it?"))
+    use_adapter(app, ScriptedAdapter(pm))
+
+    await start(client, repo)
+
+    prompt = pm.prompts[0]
+    assert "Size the plan to the task" in prompt
+    assert "a module and its tests are one feature" in prompt
+    assert "Add security only to a milestone that handles" in prompt
+    assert "code-reviewer and security on every milestone" not in prompt

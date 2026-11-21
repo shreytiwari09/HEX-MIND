@@ -44,7 +44,7 @@ class OpenAICompatAdapter:
         api_key: str | None,
         model: str,
         pricing: Pricing,
-        timeout_s: float = 120.0,
+        timeout_s: float = 240.0,  # slow reasoning models take over 2 minutes per answer
         transport: httpx.AsyncBaseTransport | None = None,
         requires_thought_signatures: bool = False,
         extra_headers: dict[str, str] | None = None,
@@ -199,7 +199,38 @@ def _clean_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
             parameters["properties"] = dict(parameters.get("properties") or {})
             if not parameters.get("required"):
                 parameters.pop("required", None)
+        parameters = _without_titles(parameters)
         cleaned.append({**tool, "function": {**function, "parameters": parameters}})
+    return cleaned
+
+
+_SUBSCHEMAS = ("items", "additionalProperties", "not")
+_SCHEMA_LISTS = ("anyOf", "oneOf", "allOf")
+
+
+def _without_titles(schema: Any) -> Any:
+    """A schema without the `title` keywords pydantic adds to the model and to every property.
+    They only repeat the property name, and the tool definitions are re-sent on every step of an
+    agent's loop, so they were a steady share of the input tokens. A *property called* `title`
+    is a name in `properties`, not a keyword, and stays."""
+    if not isinstance(schema, dict):
+        return schema
+    cleaned: dict[str, Any] = {}
+    for key, value in schema.items():
+        if key == "title" and isinstance(value, str):
+            continue
+        if key == "properties" and isinstance(value, dict):
+            cleaned[key] = {name: _without_titles(sub) for name, sub in value.items()}
+        elif key in _SCHEMA_LISTS and isinstance(value, list):
+            cleaned[key] = [_without_titles(sub) for sub in value]
+        elif key in _SUBSCHEMAS or key == "$defs":
+            cleaned[key] = (
+                {n: _without_titles(s) for n, s in value.items()}
+                if key == "$defs" and isinstance(value, dict)
+                else _without_titles(value)
+            )
+        else:
+            cleaned[key] = value
     return cleaned
 
 

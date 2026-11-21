@@ -22,6 +22,14 @@ from app.providers.router import CallContext, ProviderRouter
 
 _ROLES = {"system", "user", "assistant", "tool"}
 
+# An agent's loop re-sends the whole conversation on every step, so a file read at step 2 is paid
+# for again at steps 3 to 25 (live run: ~50,000 input tokens to write one 60-line file). Results
+# older than the last KEEP_RECENT_MESSAGES messages are cut to their first OLD_RESULT_CHARS
+# characters; the agent can call the tool again if it needs the rest.
+KEEP_RECENT_MESSAGES = 8
+OLD_RESULT_CHARS = 300
+_SHORTENED = "[older result shortened"
+
 
 class ProviderCallFailed(RuntimeError):
     pass
@@ -71,7 +79,7 @@ class HexLLM(BaseLLM):
         stop = None if native else (list(self.stop) if getattr(self, "stop", None) else None)
         request = LLMRequest(
             purpose=self._purpose,
-            messages=to_chat_messages(messages, self._call_extras),
+            messages=trim_history(to_chat_messages(messages, self._call_extras)),
             tools=tools if native else None,
             max_tokens=self._max_tokens,
             temperature=0.2,
@@ -98,6 +106,30 @@ class HexLLM(BaseLLM):
 
     def get_context_window_size(self) -> int:
         return 8192
+
+
+def trim_history(messages: list[ChatMessage]) -> list[ChatMessage]:
+    """The conversation with old, long tool results shortened. Same messages in the same order
+    (tool calls and their results stay paired); only the text of old results changes."""
+    cutoff = len(messages) - KEEP_RECENT_MESSAGES
+    trimmed: list[ChatMessage] = []
+    for index, message in enumerate(messages):
+        text = message.content or ""
+        if (
+            index < cutoff
+            and message.role == "tool"
+            and len(text) > OLD_RESULT_CHARS
+            and _SHORTENED not in text
+        ):
+            note = (
+                f"\n… {_SHORTENED} from {len(text)} characters; "
+                "call the tool again if you need the rest]"
+            )
+            message = message.model_copy(
+                update={"content": text[:OLD_RESULT_CHARS].rstrip() + note}
+            )
+        trimmed.append(message)
+    return trimmed
 
 
 def to_chat_messages(

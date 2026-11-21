@@ -251,17 +251,23 @@ Conversation so far:
 {decide}
 
 How to plan:
-- Keep it small: 2 to 5 milestones, 1 to 5 features each, each feature one persona's work that
-  can be checked by tests. Features run one at a time in the order given.
+- Size the plan to the task. A small task (one module, a few functions, a small fix) is one or
+  two milestones with one to three features in all; a normal app is 2 to 5 milestones. Each
+  feature is one persona's work that can be checked by tests, and features run one at a time.
+  Every extra milestone or feature costs minutes and many model calls, so do not split what one
+  agent can do in one sitting: a module and its tests are one feature, not two.
 - If the project has no {CONTRACT_PATH}, the first feature is DevOps writing the scaffold and
-  {CONTRACT_PATH} (stack, image, install, test, typecheck, lint, acceptance, start, port).
+  {CONTRACT_PATH} (stack, image, install, test, typecheck, lint, acceptance, start, port). Keep
+  that scaffold to the minimum the checks need.
 - Ids: lowercase-with-dashes for milestones and features; criteria are VC-1, VC-2, ...
 - Exact interfaces are the user's, not yours to reword: when the idea names functions, their
   parameters, file names, data formats or example values, copy them word for word into the
   feature's description and expected behavior and into the validation criteria that check them.
   The builders and QA see only the plan, so anything you leave out they will invent.
-- Validators: code-reviewer and security on every milestone; add qa where the validation
-  contract has unit test or api test criteria for that milestone's features.
+- Validators: code-reviewer on every milestone. Add security only to a milestone that handles
+  logins, secrets, user input, files or the network (a pure calculation module does not need it),
+  and qa where the validation contract has unit test or api test criteria for that milestone's
+  features. Each validator is several more model calls.
 - The validation contract states checkable behaviour from the user's point of view; "how" is
   one of: unit test, api test, browser, typecheck, security review.
 - prd: plain-language markdown: who it is for, must-haves, out of scope, assumptions.

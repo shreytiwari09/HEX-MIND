@@ -47,6 +47,7 @@ from app.agents.llm import HexLLM
 from app.agents.mcp_bridge import McpWorkspace
 from app.agents.persona import Persona, UnknownPersona, get_persona
 from app.agents.tools import CODER, READ_ONLY, make_tools, tool_summary
+from app.context.preload import preload_files
 from app.context.repo_map import build_repo_map
 from app.events.log import EventType
 from app.guardrails.injection import MARK, signals_of
@@ -317,6 +318,13 @@ class CrewExecutor(AgentExecutor):
                     plugin_tools=[t.name for t in plugin_tools],
                     criteria=request.criteria,
                     repo_map=await run_in_threadpool(build_repo_map, ctx.worktree, focus),
+                    # Builders get their target files up front. Not QA's acceptance tests (they
+                    # must not be written from the implementation) and not validators.
+                    files_text=(
+                        await run_in_threadpool(preload_files, ctx.worktree, focus)
+                        if persona.kind == "worker" and request.mode == "feature"
+                        else ""
+                    ),
                 )
             else:
                 factory = roles.planner if self.role == "planner" else roles.coder

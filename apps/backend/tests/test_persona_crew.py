@@ -84,6 +84,7 @@ async def run_persona(
     feat: Feature,
     earlier: list[Handoff] | None = None,
     escalate: bool = False,
+    mode: str = "feature",
 ) -> str:
     services = app.state.services
     request = PersonaRequest(
@@ -96,6 +97,7 @@ async def run_persona(
         feature=feat,
         earlier_handoffs=earlier or [],
         escalate=escalate,
+        mode=mode,  # type: ignore[arg-type]
     )
     return await call_crew(
         "persona",
@@ -136,7 +138,13 @@ async def test_a_worker_persona_changes_files_and_returns_a_valid_report(
     ]
 
     text = await run_persona(
-        app, run_id, worktree, workspace, "backend", feature("backend"), earlier
+        app,
+        run_id,
+        worktree,
+        workspace,
+        "backend",
+        feature("backend", target_files=["src/app.ts"]),
+        earlier,
     )
 
     report = AgentReport.model_validate_json(text)
@@ -152,6 +160,9 @@ async def test_a_worker_persona_changes_files_and_returns_a_valid_report(
     assert any_tool(first, "write_file") and any_tool(first, "run_check")
     # The worker is shown a map of the project, the file it is expected to touch first.
     assert "Map of the project" in prompt and "src/app.ts  (x)" in prompt
+    # The builder already has the file it is expected to touch, and is told to batch its steps.
+    assert "already read for you" in prompt and "export const x = 1" in prompt
+    assert "ask for all of those tool calls in one step" in prompt
     assert any_tool(first, "delete_file") and any_tool(first, "git_diff")
     assert any_tool(first, "get_feature_context")
 
@@ -186,3 +197,29 @@ async def test_an_invalid_report_or_unknown_persona_fails_the_task(
 
     with pytest.raises(CrewCallFailed, match=reason):
         await run_persona(app, run_id, worktree, workspace, persona_id, feature(persona_id))
+
+
+@pytest.mark.parametrize(
+    ("persona_id", "mode"), [("qa", "acceptance"), ("code-reviewer", "feature")]
+)
+async def test_only_builders_get_files_in_the_first_prompt_not_qa_or_reviewers(
+    app: FastAPI, workspace: Path, persona_id: str, mode: str
+) -> None:
+    # QA must write acceptance tests from the contract, not from the implementation, and
+    # validators judge the diff themselves.
+    script = PersonaScript()
+    use_adapter(app, ScriptedAdapter(script))
+    run_id, worktree = await start(app, workspace)
+
+    await run_persona(
+        app,
+        run_id,
+        worktree,
+        workspace,
+        persona_id,
+        feature(persona_id, target_files=["src/app.ts"]),
+        mode=mode,
+    )
+
+    prompt = "\n".join(m.content or "" for m in script.requests[0].messages)
+    assert "already read for you" not in prompt and "export const x = 1" not in prompt

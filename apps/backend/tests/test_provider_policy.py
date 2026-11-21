@@ -411,11 +411,23 @@ async def test_unhealthy_provider_is_skipped(app: FastAPI) -> None:
 
 
 async def test_transient_failures_exhaust_then_fall_back(app: FastAPI) -> None:
-    groq = FakeProvider("groq", [ProviderError("timeout", kind="timeout")])
+    groq = FakeProvider("groq", [ProviderError("busy", kind="server")])
     gemini = FakeProvider("gemini")
     router = _router(app, [groq, gemini], Clock())
     result = await router.complete(REQUEST)
     assert result.content == "from gemini" and groq.calls == 3
+
+
+async def test_a_timeout_falls_back_at_once_instead_of_being_asked_again(app: FastAPI) -> None:
+    # Live run: a hung fallback model was asked 3 times, 120 s each, before giving up.
+    groq = FakeProvider("groq", [ProviderError("timeout", kind="timeout")])
+    gemini = FakeProvider("gemini")
+    router = _router(app, [groq, gemini], Clock())
+
+    result = await router.complete(REQUEST)
+
+    assert result.content == "from gemini" and result.fallback_from == "groq"
+    assert groq.calls == 1  # not retried
 
 
 async def test_all_providers_failing_returns_last_error(app: FastAPI) -> None:
@@ -795,3 +807,65 @@ async def test_failed_calls_to_real_tools_still_fail() -> None:
     with pytest.raises(ProviderError) as info:
         await adapter.complete(REQUEST.model_copy(update={"tools": READ_TOOL}))
     assert info.value.kind == "bad_request"
+
+
+async def test_tool_definitions_are_sent_without_pydantic_titles_and_stay_smaller() -> None:
+    import json as _json
+
+    from app.agents.tools import SPECS
+
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}], "usage": {}})
+
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": description,
+                "parameters": schema.model_json_schema(),
+            },
+        }
+        for name, (schema, description) in SPECS.items()
+    ]
+    tools.append(
+        {
+            "type": "function",
+            "function": {
+                "name": "rename",
+                "description": "d",
+                "parameters": {
+                    "title": "Rename",
+                    "type": "object",
+                    "properties": {
+                        "title": {"title": "Title", "type": "string"},  # a parameter called title
+                        "tags": {
+                            "title": "Tags",
+                            "type": "array",
+                            "items": {"title": "T", "type": "string"},
+                        },
+                    },
+                    "required": ["title"],
+                },
+            },
+        }
+    )
+    request = LLMRequest(
+        purpose="coder", messages=[ChatMessage(role="user", content="hi")], tools=tools
+    )
+
+    await _hosted(handler).complete(request)
+
+    sent = seen["tools"]
+    assert '"title": "' not in _json.dumps(sent).replace('"title": {', "")  # no keyword left
+    rename = sent[-1]["function"]["parameters"]
+    assert "title" not in rename or isinstance(rename.get("title"), dict) is False
+    assert rename["properties"]["title"] == {"type": "string"}  # the parameter itself is kept
+    assert rename["required"] == ["title"]
+    assert rename["properties"]["tags"] == {"type": "array", "items": {"type": "string"}}
+    before = len(_json.dumps([t for t in request.tools[:-1]]))
+    after = len(_json.dumps(sent[:-1]))
+    assert after < before * 0.9  # measured on the real tool list: 4884 -> 4288 characters (-12%)

@@ -304,7 +304,10 @@ class ProviderRouter:
                 break
             except ProviderError as exc:
                 error = exc
-                if not exc.retryable or attempts >= limit:
+                # A timeout has already spent the whole request time; asking the same slow or
+                # hung model again only repeats it (live run: 3 x 120 s = a 6-minute stall), so
+                # the next provider takes over at once. Other transient errors are retried.
+                if not exc.retryable or exc.kind == "timeout" or attempts >= limit:
                     break
                 delay = self._backoff_s * 2 ** (attempts - 1)
                 if exc.retry_after is not None:

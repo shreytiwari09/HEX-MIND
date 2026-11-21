@@ -14,4 +14,7 @@ description: Split a product into milestones and small, checkable features.
 - Give every feature `expected_behavior` as observable statements, and the `target_files` you expect.
 - Write the validation contract in the user's terms (`VC-1`, `VC-2`, ...), each tied to a feature
   and marked with how it is checked: unit test, api test, browser, typecheck or security review.
-- Put `code-reviewer` and `security` on every milestone, and `qa` where there are unit or api criteria.
+- Size the plan to the task: a small task is one or two milestones and one to three features, and a
+  module and its tests are one feature. Put `code-reviewer` on every milestone, `security` only where the
+  milestone handles logins, secrets, user input, files or the network, and `qa` where there are unit or
+  api criteria. Every extra milestone, feature or validator costs many model calls.
