@@ -1,5 +1,7 @@
 # Routing labels
 
+> **Current label set: written and labeled by Claude, not by a person (2026-11-22, PRD D85).** The project owner chose this instead of labeling 150 prompts by hand. `data/labels-claude.csv` holds 150 prompts (40 question, 45 code_edit, 35 new_workflow, 30 clarification; 55 low, 56 medium, 39 high), imported with `--labeler claude`. Results from experiment E6 must say so: they measure the routers against one model's judgement, not against human answers. To get a human answer key, label at least 30 of these prompts yourself and import them under your own name; `agreement claude <you>` then reports how closely the two agree, and a kappa below about 0.6 means these definitions need tightening before anyone trusts the labels.
+
 The scikit-learn baseline (M7) and the comparison against the LLM Router both need prompts that **people** have labeled. Never use model output as a label, because then we would be measuring the model against itself.
 
 **Target:** at least 150 labeled prompts by the end of M2. At least 30 of them must be labeled independently by two people, so we can report agreement.

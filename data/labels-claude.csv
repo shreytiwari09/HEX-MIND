@@ -1,0 +1,151 @@
+prompt,request_type,complexity
+Why does the filter reset when I reload the page?,question,low
+What does the debounce function in utils.js do?,question,low
+Which file defines the todo model?,question,low
+How do I run the tests for this project?,question,low
+What does the useTodos hook return?,question,low
+Is there a reason we use localStorage instead of a database here?,question,low
+Explain what the regex in validate.js matches,question,low
+What port does the dev server use?,question,low
+Which package handles date formatting in this project?,question,low
+What's the difference between the active and done filters in the list view?,question,low
+Where is the Streamlit session state initialised?,question,low
+What does exit code 127 mean in the test output?,question,low
+Are there any unused dependencies in package.json?,question,low
+How does the calculator handle division by zero right now?,question,low
+What does npm run build produce and where does it put it?,question,low
+Is the delete button wired to anything yet?,question,low
+Does the app work offline?,question,low
+Which component renders the empty state?,question,low
+what is the .hex folder for,question,low
+What does the license file say I can do with this code?,question,low
+How does data flow from the form component to the saved list? Walk me through it,question,medium
+Why is the app re-rendering the whole list when I tick one item?,question,medium
+What would break if I renamed the id column in the todos table?,question,medium
+Can you review src/api and tell me where error handling is inconsistent?,question,medium
+"Compare how the Express routes and the React forms validate input, and tell me where they disagree",question,medium
+Which parts of the code would be affected if we change the date format to ISO 8601?,question,medium
+Why do two of our tests pass alone but fail when they run together?,question,medium
+What are the main risks in how we store passwords at the moment?,question,medium
+"How many places read the API base URL, and could we centralise it?",question,medium
+Summarise what changed in the last two commits and why it might have broken the login page,question,medium
+Explain how the sandbox install step works and why it needs network access,question,medium
+Is the SQL query in reports.py vulnerable to injection?,question,medium
+Give me a security review of the whole authentication flow and rank the issues,question,high
+Analyse the architecture and tell me what would stop this scaling to 100k users,question,high
+"Which parts of the codebase would need to change to move from SQLite to Postgres, and what are the risks?",question,high
+Audit our dependency tree for known vulnerabilities and tell me which upgrades are risky,question,high
+"Explain how our session handling, CSRF protection and CORS settings interact and where they conflict",question,high
+"We see random 500s under load. From the code, what concurrency bugs could cause that?",question,high
+"How would you restructure the data layer to support multiple tenants? Analysis only, no changes",question,high
+Review the whole repo for accessibility problems and group them by severity,question,high
+Rename the Save button to Add,code_edit,low
+Change the primary colour to indigo in theme.css,code_edit,low
+Fix the typo 'recieve' in the README,code_edit,low
+Make the todo input autofocus on page load,code_edit,low
+Increase the max title length from 50 to 100 characters,code_edit,low
+Add a delete button to each todo item,code_edit,low
+Change the page title to My Tasks,code_edit,low
+Make the calculator display show two decimals,code_edit,low
+Swap the order of the Name and Email fields in the signup form,code_edit,low
+Remove the console.log calls in api.js,code_edit,low
+Make the header sticky,code_edit,low
+Set the default filter to active,code_edit,low
+Round the percentage in the summary card to one decimal,code_edit,low
+Disable the submit button while the form is saving,code_edit,low
+Show a toast after a todo is saved,code_edit,low
+Add due dates to todos and show them in the list,code_edit,medium
+Replace the inline styles in the dashboard components with CSS classes,code_edit,medium
+Make the todo list paginate at 20 items per page,code_edit,medium
+Add form validation with inline error messages to the signup and login forms,code_edit,medium
+Convert the fetch calls in src/api to async/await and add proper error handling,code_edit,medium
+Add dark mode that follows the system setting and remembers the choice,code_edit,medium
+Make the table sortable by clicking the column headers,code_edit,medium
+Move the hard-coded API URL into an environment variable and update the docs,code_edit,medium
+Add a search box that filters todos by title as I type,code_edit,medium
+"Make the layout responsive for phones, the sidebar should become a drawer",code_edit,medium
+"Add keyboard shortcuts for add, complete and delete, and show them in a help dialog",code_edit,medium
+Add loading and error states to every page that fetches data,code_edit,medium
+Cache the weather API response for 10 minutes and show when it was last updated,code_edit,medium
+Fix the bug where completing a todo in the filtered view makes it jump to the wrong place,code_edit,medium
+Add an unsaved changes warning when leaving the edit page,code_edit,medium
+Rename the Todo type to Task everywhere,code_edit,medium
+Make the tests use a temporary database instead of the real one,code_edit,medium
+Replace Google login with GitHub OAuth and update the session handling,code_edit,high
+Refactor state management from prop drilling to a context or store across the whole app,code_edit,high
+Migrate the codebase from JavaScript to TypeScript,code_edit,high
+Switch the database layer from raw SQL to an ORM across all models and update the tests,code_edit,high
+"Add role-based permissions so admins see all todos and users only their own, including the API checks",code_edit,high
+Hash all stored passwords and migrate the existing users without locking them out,code_edit,high
+Make every route lazy-load and fix any state that depends on load order,code_edit,high
+Encrypt personal data at rest and add an audit log of who read or changed it,code_edit,high
+Move file uploads to S3 with signed URLs and migrate the existing files,code_edit,high
+Replace the polling with WebSockets for live updates and handle reconnects and ordering,code_edit,high
+Split the monolithic app.py into modules without changing behaviour and keep the tests passing,code_edit,high
+Upgrade React to the latest major version and fix everything that breaks,code_edit,high
+Add rate limiting and brute-force protection to every API endpoint,code_edit,high
+Build a tiny to-do app with a text box and a list,new_workflow,low
+Make a simple calculator in Streamlit,new_workflow,low
+Create a script that renames all files in a folder to lowercase,new_workflow,low
+Write a one-page HTML landing page for a bakery,new_workflow,low
+Create a command-line tool that converts temperatures,new_workflow,low
+"Build a stopwatch page with start, stop and reset",new_workflow,low
+Create a simple tip calculator,new_workflow,low
+"Build a todo app with filters, due dates and local storage",new_workflow,medium
+"Create a notes app where I can add, edit, delete and search notes",new_workflow,medium
+Make a weather dashboard that shows the 5-day forecast for a searched city,new_workflow,medium
+Build an expense tracker with categories and a monthly chart,new_workflow,medium
+Create a REST API for a bookstore with FastAPI and tests,new_workflow,medium
+Build a markdown blog that reads posts from a folder,new_workflow,medium
+Create a habit tracker with streaks and a calendar view,new_workflow,medium
+Build a Kanban board with drag and drop between columns,new_workflow,medium
+Create a quiz app that loads questions from a JSON file and shows my score,new_workflow,medium
+Add a CSV import and export feature for todos,new_workflow,medium
+Build a URL shortener with a small admin page,new_workflow,medium
+"Add a recurring tasks feature: daily, weekly and monthly",new_workflow,medium
+Add a dashboard page with charts of completed tasks per week,new_workflow,medium
+Build a recipe app that saves recipes and scales the ingredient amounts,new_workflow,medium
+Create a pomodoro timer with history and daily stats,new_workflow,medium
+Add a login system with email and password,new_workflow,high
+Add shared lists that I can send to a friend with a link,new_workflow,high
+"Build a full e-commerce site with products, cart, checkout and an admin panel",new_workflow,high
+"Create a team chat app with channels, direct messages and real-time updates",new_workflow,high
+"Build a multi-user project management tool with accounts, roles, comments and notifications",new_workflow,high
+"Make a SaaS invoicing app with Stripe payments, PDF export and user accounts",new_workflow,high
+"Create a booking system for a clinic with availability, reminders and payments",new_workflow,high
+"Build a social network with profiles, follows, a feed and image uploads",new_workflow,high
+"Build a learning platform with courses, progress tracking, quizzes and certificates",new_workflow,high
+Add real-time collaboration so two people can edit the same list at once,new_workflow,high
+"Build an inventory system with barcode scanning, suppliers and stock alerts",new_workflow,high
+"Create a marketplace where users list items, message each other and pay through escrow",new_workflow,high
+Add a plugin system so third parties can extend the app,new_workflow,high
+make it better,clarification,medium
+fix the thing,clarification,low
+it's broken,clarification,low
+Can you improve the design?,clarification,medium
+make it faster,clarification,medium
+Add the feature we talked about,clarification,low
+Do the usual,clarification,low
+clean this up,clarification,medium
+Make it look professional,clarification,medium
+update it,clarification,low
+The button doesn't work,clarification,low
+Something is wrong with the login,clarification,medium
+Make it secure,clarification,high
+Make it production ready,clarification,high
+Add some analytics,clarification,medium
+I want it to feel more modern,clarification,medium
+Fix all the bugs,clarification,high
+Do what the client asked,clarification,low
+Change the colours,clarification,low
+Add AI,clarification,medium
+Redo the whole thing but better,clarification,high
+Improve performance somewhere,clarification,medium
+Same as before but for the other page,clarification,low
+Fix it like last time,clarification,low
+Add users,clarification,medium
+Make it scalable,clarification,high
+Why isn't it working? Fix it,clarification,low
+Tidy up the code,clarification,medium
+Just make it work,clarification,low
+Put the thing on the page,clarification,low
