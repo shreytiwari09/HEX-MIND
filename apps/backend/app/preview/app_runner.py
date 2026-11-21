@@ -110,6 +110,11 @@ class AppRunner:
         self._poll = poll_s
         self._apps: dict[str, RunningApp] = {}
 
+    @property
+    def images(self) -> list[str]:
+        """The sandbox images apps (and the project terminal) may use."""
+        return list(self._images)
+
     def get(self, project_id: str) -> RunningApp | None:
         return self._apps.get(project_id)
 

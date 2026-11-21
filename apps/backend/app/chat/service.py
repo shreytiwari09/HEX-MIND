@@ -40,8 +40,17 @@ def run_arguments(content: str) -> str | None:
     return match.group("args").strip() if match and "\n" not in content.strip() else None
 
 
+_TERMINAL = re.compile(
+    r"^\s*(?:please\s+)?open\s+(?:a\s+|the\s+)?(?:terminal|shell)(?:\s+(?:here|for\s+it))?"
+    r"\s*(?:please)?\s*[.!]?\s*$",
+    re.IGNORECASE,
+)
+
+
 def app_command(content: str) -> str | None:
-    """'run' or 'stop' when the whole message is one of those short commands, else None."""
+    """'run', 'stop' or 'terminal' when the whole message is one of those short commands."""
+    if _TERMINAL.match(content):
+        return "terminal"
     if _RUN.match(content):
         return "run"
     if _STOP.match(content):
@@ -152,6 +161,8 @@ class ChatService:
         async with self._services.sessionmaker() as session:
             project = await session.get(Project, project_id)
         assert project is not None
+        if command == "terminal":
+            return await self._terminal_reply(Path(project.workspace_path))
         cli = await self._cli_reply(project_id, "", folder=Path(project.workspace_path))
         if cli is not None:
             return cli
@@ -164,6 +175,22 @@ class ChatService:
             text = f"The app did not start: {app.error}.\n\n```\n{logs}\n```"
             return text, {"kind": "app", "status": app.status}
         return link_text(app), {"kind": "app", "status": "running", "url": app.url}
+
+    async def _terminal_reply(self, folder: Path) -> tuple[str, dict]:
+        from app.preview import terminal
+
+        assert self._apps is not None
+        try:
+            steps = await asyncio.to_thread(terminal.open_terminal, folder, self._apps.images)
+        except terminal.TerminalError as exc:
+            return f"I could not open a terminal: {exc}", {"kind": "app", "status": "failed"}
+        tried = "".join(f"\n\n```\n{s}\n```" for s in steps)
+        text = (
+            "Opened a terminal in this project's sandbox: it has this project folder and "
+            "nothing else from your computer. Type `exit` there to close it."
+            + (f"\n\nTry:{tried}" if steps else "")
+        )
+        return text, {"kind": "app", "status": "terminal"}
 
     async def _cli_reply(
         self, project_id: uuid.UUID, args: str, folder: Path | None = None

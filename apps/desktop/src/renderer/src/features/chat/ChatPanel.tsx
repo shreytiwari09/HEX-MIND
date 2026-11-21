@@ -1,4 +1,4 @@
-import { Play, Plus, Send } from 'lucide-react'
+import { Play, Plus, Send, SquareTerminal } from 'lucide-react'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 
 import { EmptyState, PanelHeader } from '../../components/Panel'
@@ -61,6 +61,16 @@ export function ChatPanel({ chat, enabled, disabledReason, onOpenRun, onOpenFile
               onClick={() => void chat.send('run it', 'auto')}
             >
               <Play size={14} />
+            </button>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Open terminal"
+              title="Open a terminal in the project's sandbox to run it yourself"
+              disabled={!enabled || chat.pending !== null}
+              onClick={() => void chat.send('open terminal', 'auto')}
+            >
+              <SquareTerminal size={14} />
             </button>
             <button
               type="button"
