@@ -331,3 +331,27 @@ async def test_the_pm_is_told_to_size_the_plan_to_the_task_and_use_fewer_validat
     assert "a module and its tests are one feature" in prompt
     assert "Add security only to a milestone that handles" in prompt
     assert "code-reviewer and security on every milestone" not in prompt
+
+
+async def test_the_pm_plans_a_layout_the_user_can_run_on_their_own_computer(
+    app: FastAPI, client: httpx.AsyncClient, repo: Path
+) -> None:
+    # The user found built projects with no folder structure, no README and no venv setup.
+    pm = PM(asking("Who uses it?"))
+    use_adapter(app, ScriptedAdapter(pm))
+
+    await start(client, repo)
+
+    prompt = pm.prompts[0]
+    assert "src/ and tests/" in prompt and "a .gitignore" in prompt
+    assert "README with local setup commands" in prompt and "virtual environment" in prompt
+
+
+def test_devops_has_the_project_layout_skill_and_it_is_valid() -> None:
+    from app.agents.persona import get_persona
+    from app.skills.registry import SkillRegistry
+
+    assert "project-layout" in get_persona("devops").skills
+    skill = SkillRegistry(None).get("project-layout")
+    assert ".venv/" in skill.body and "python3 -m venv .venv" in skill.body
+    assert "Never create or commit the virtual environment" in skill.body

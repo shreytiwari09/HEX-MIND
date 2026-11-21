@@ -257,8 +257,10 @@ How to plan:
   Every extra milestone or feature costs minutes and many model calls, so do not split what one
   agent can do in one sitting: a module and its tests are one feature, not two.
 - If the project has no {CONTRACT_PATH}, the first feature is DevOps writing the scaffold and
-  {CONTRACT_PATH} (stack, image, install, test, typecheck, lint, acceptance, start, port). Keep
-  that scaffold to the minimum the checks need.
+  {CONTRACT_PATH} (stack, image, install, test, typecheck, lint, acceptance, start, port) and a
+  standard layout the user can run on their own computer: src/ and tests/, a dependency file
+  (requirements.txt or package.json), a .gitignore, and a README with local setup commands (for
+  Python, a virtual environment). Keep it to what the project uses: no empty folders.
 - Ids: lowercase-with-dashes for milestones and features; criteria are VC-1, VC-2, ...
 - Exact interfaces are the user's, not yours to reword: when the idea names functions, their
   parameters, file names, data formats or example values, copy them word for word into the
