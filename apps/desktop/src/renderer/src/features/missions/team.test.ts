@@ -6,7 +6,7 @@ import { ago, personaOf, teamActivity } from './team'
 let seq = 0
 function ev(type: string, agent_id: string | null, payload: Record<string, unknown>, ts = '2026-11-22T01:00:00Z'): AgentEvent {
   seq += 1
-  return { type, agent_id, payload, seq, ts, run_id: 'r', event_id: String(seq), schema_version: 8, task_id: null } as unknown as AgentEvent
+  return { type, agent_id, payload, seq, ts, run_id: 'r', event_id: String(seq), schema_version: 9, task_id: null } as unknown as AgentEvent
 }
 
 const feature = (status: string, persona: string, ts?: string) =>

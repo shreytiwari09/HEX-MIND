@@ -1,5 +1,5 @@
 """The MissionRunner: a deterministic loop over a mission's features (PRD §8.3, §8.4, §8.6,
-§12.3; decision D25: a custom ADK `BaseAgent`, not Sequential/Loop agents).
+§12.3; decisions D25 and D88: plain code run as the single node of a LangGraph graph).
 
 Features run **one at a time**, each starting from the code the previous one committed. For
 each feature the runner:
@@ -31,6 +31,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi.concurrency import run_in_threadpool
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 from pydantic import ValidationError
 from sqlalchemy import func, select
 
@@ -67,8 +69,8 @@ from app.missions.models import (
     ValidatorReport,
 )
 from app.missions.validators import VALIDATORS, FeatureSnap, ValidationContext
-from app.orchestration.adk import run_adk
-from app.orchestration.run import NO_CHANGES_FEEDBACK, RunStep, _innermost, set_status
+from app.orchestration.graph import run_graph
+from app.orchestration.run import NO_CHANGES_FEEDBACK, _innermost, set_status
 from app.orchestration.services import Services
 from app.plugins import registry as plugin_registry
 from app.plugins.config import PluginSpec, config_hash
@@ -1200,6 +1202,20 @@ class MissionRunner:
                 )
 
 
+def mission_graph(runner: "MissionRunner") -> CompiledStateGraph:
+    """The MissionRunner as one deterministic node (serial features, checks and checkpoints)."""
+
+    async def mission_runner(_: dict[str, Any]) -> dict[str, Any]:
+        await runner.run()
+        return {}
+
+    graph = StateGraph(dict)
+    graph.add_node("mission_runner", mission_runner, metadata={"hex_kind": "step"})
+    graph.add_edge(START, "mission_runner")
+    graph.add_edge("mission_runner", END)
+    return graph.compile(name="mission")
+
+
 async def execute_mission(services: Services, mission_id: uuid.UUID) -> None:
     """Run (or resume) a mission to its next stopping point. Unexpected failures mark the
     mission failed with a run_failed event."""
@@ -1207,12 +1223,7 @@ async def execute_mission(services: Services, mission_id: uuid.UUID) -> None:
     try:
         await runner.load()
         assert runner.telemetry is not None
-        await run_adk(
-            runner.telemetry.instrument(
-                RunStep("mission_runner", "Serial features, checks and checkpoints.", runner.run)
-            ),
-            message=f"Run mission {mission_id}",
-        )
+        await run_graph(mission_graph(runner), {}, telemetry=runner.telemetry)
     except Exception as exc:
         exc = _innermost(exc)
         if not isinstance(exc, MissionAborted):

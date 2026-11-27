@@ -120,3 +120,46 @@ async def test_crew_service_process_is_not_started_twice(app: FastAPI) -> None:
     # The in-process crew app answers, so the service counts as already running.
     assert await manager.start(app.state.services.a2a_http) is True
     assert started == []
+
+
+async def test_call_crew_timeout_raises_timed_out(app: FastAPI, tmp_path: Path) -> None:
+    """No answer in time must stay a CrewCallTimedOut, so messaging mode can resend."""
+    from app.a2a.client import CrewCallTimedOut
+    from app.a2a.server import agent_card
+
+    async with app.state.sessionmaker.begin() as session:
+        project = Project(name="p", workspace_path=str(tmp_path))
+        session.add(project)
+        await session.flush()
+        run = Run(project_id=project.id, title="r")
+        session.add(run)
+        await session.flush()
+        run_id = run.id
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            card = agent_card("coder", "http://crew")
+            return httpx.Response(200, json=card.model_dump(mode="json", by_alias=True))
+        raise httpx.ReadTimeout("no answer", request=request)
+
+    services = app.state.services
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="http://crew"
+    ) as http:
+        with pytest.raises(CrewCallTimedOut):
+            await call_crew(
+                "coder",
+                hub=TelemetryHub(services, run_id),
+                http=http,
+                settings=services.settings,
+                prompt="Implement it",
+                request=CrewRequest(
+                    exchange_id=uuid.uuid4(),
+                    run_id=run_id,
+                    agent_id="coder_01",
+                    worktree=str(tmp_path),
+                    workspace=str(tmp_path),
+                    expected_output="summary",
+                ),
+                parent="coder",
+            )

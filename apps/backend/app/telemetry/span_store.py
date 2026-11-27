@@ -5,8 +5,8 @@ span processor writes every finished span to the `trace_spans` table, from a bac
 that tracing never slows an agent down and a database hiccup never breaks one: a span that cannot
 be written is dropped (and counted), never retried forever.
 
-**What is stored is sanitised.** ADK can attach whole prompts and responses to its spans; those
-must not land in a table (the audit trail proves what was sent with hashes, not by keeping the
+**What is stored is sanitised.** A framework can attach whole prompts and responses to spans;
+those must not land in a table (the audit trail proves what was sent with hashes, not by keeping the
 text). So only attributes with an allow-listed name are kept, content-bearing names are refused
 even inside an allowed prefix, string values are redacted for secrets and cut short.
 """

@@ -5,7 +5,7 @@ import type { AgentEvent } from '../../generated/events'
  * view shows what the backend recorded: nothing here is simulated.
  */
 
-export type Framework = 'adk' | 'crewai'
+export type Framework = 'adk' | 'langgraph' | 'crewai'
 
 type EventOf<T extends AgentEvent['type']> = Extract<AgentEvent, { type: T }>
 
@@ -40,7 +40,7 @@ export interface AgentStats {
 /** Agents are keyed by name: `agent_id` on model and tool events is the same name. */
 export function deriveAgents(events: AgentEvent[]): AgentStats[] {
   const agents = new Map<string, AgentStats>()
-  const get = (name: string, framework: Framework = 'adk', kind = 'custom'): AgentStats => {
+  const get = (name: string, framework: Framework = 'langgraph', kind = 'step'): AgentStats => {
     let agent = agents.get(name)
     if (!agent) {
       agent = {
@@ -213,7 +213,7 @@ export function deriveClaimLog(events: AgentEvent[]): ClaimLogEntry[] {
 
 export type CallbackEvent = EventOf<'callback_fired'> | EventOf<'agent_started'> | EventOf<'agent_finished'>
 
-/** Every framework callback. before/after_agent callbacks are recorded as agent_started/finished. */
+/** Every framework callback. Agent and node starts and ends are recorded as agent_started/finished. */
 export function callbackEvents(events: AgentEvent[]): CallbackEvent[] {
   return events.filter(
     (e): e is CallbackEvent => e.type === 'callback_fired' || e.type === 'agent_started' || e.type === 'agent_finished'
@@ -222,9 +222,10 @@ export function callbackEvents(events: AgentEvent[]): CallbackEvent[] {
 
 export function callbackHook(event: CallbackEvent): string {
   if (event.type === 'callback_fired') return event.payload.hook
-  const crew = event.payload.framework === 'crewai'
-  if (event.type === 'agent_started') return crew ? 'before_kickoff' : 'before_agent_callback'
-  return crew ? 'after_kickoff' : 'after_agent_callback'
+  const started = event.type === 'agent_started'
+  if (event.payload.framework === 'crewai') return started ? 'before_kickoff' : 'after_kickoff'
+  if (event.payload.framework === 'langgraph') return started ? 'node_start' : 'node_end'
+  return started ? 'before_agent_callback' : 'after_agent_callback' // events recorded under ADK
 }
 
 export function schemaChecks(events: AgentEvent[]): EventOf<'schema_validated'>[] {

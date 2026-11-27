@@ -1,40 +1,33 @@
-"""Conversation flow on Google ADK: build context -> Router -> policy -> answer | clarify | run.
+"""Conversation flow as a LangGraph graph: context -> router -> answer | clarify | run.
 
-- `ConversationAgent` (custom ADK BaseAgent) owns the flow and the deterministic steps.
-- `router` is an ADK LlmAgent with Pydantic `output_schema=RouterDecision`, guarded so invalid
-  output is repaired once and otherwise replaced by a fallback (see `adk.schema_guard`).
+- `build_conversation_graph` wires the nodes; a conditional edge follows the policy's route.
+- `router` is a model node with Pydantic output (`RouterDecision`), repaired once and otherwise
+  replaced by a fallback (see `graph.structured_call`).
 - The policy (`apply_policy`) decides the route; the Router only proposes it.
-- `answer` is an ADK LlmAgent for Ask-style replies.
+- `answer` is a model node for Ask-style replies.
 Runs are executed in the background by the run orchestrator (`orchestration.run`).
 
-All model calls go through ProviderRouter via HexAdkLlm, so they are logged and fall back
+All model calls go through ProviderRouter via HexChatModel, so they are logged and fall back
 across providers like every other call.
 """
 
 import uuid
-from collections.abc import AsyncGenerator
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from fastapi.concurrency import run_in_threadpool
-from google.adk.agents import BaseAgent, LlmAgent
-from google.adk.agents.invocation_context import InvocationContext
-from google.adk.events import Event
-from pydantic import PrivateAttr
+from langchain_core.messages import HumanMessage, SystemMessage
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 from sqlalchemy import select
+from typing_extensions import TypedDict
 
-from app.agents.adk_llm import HexAdkLlm
+from app.agents.chat_model import HexChatModel
 from app.db.models import Conversation, Project, Run
 from app.db.models import RouterDecision as RouterDecisionRow
 from app.events.log import EventType, append_event
-from app.orchestration.adk import (
-    model_error_fallback,
-    run_adk,
-    schema_guard,
-    state_event,
-    user_message_from_state,
-)
+from app.orchestration.graph import run_graph, structured_call
 from app.orchestration.services import Services
 from app.providers.assignments import route_for
 from app.providers.router import CallContext
@@ -82,66 +75,23 @@ def _router_fallback(errors: list[str]) -> RouterDecision:
     return _INVALID_ROUTER
 
 
-class ConversationAgent(BaseAgent):
-    """Root agent for one user message."""
+class ConversationState(TypedDict, total=False):
+    context_text: str
+    route: str
 
-    _services: Services = PrivateAttr()
-    _turn: dict[str, Any] = PrivateAttr()
-    _router_llm: HexAdkLlm = PrivateAttr()
-    _answer_llm: HexAdkLlm = PrivateAttr()
 
-    def __init__(self, services: Services, turn: dict[str, Any]) -> None:
-        router_llm = HexAdkLlm(
-            router=services.providers, ctx=CallContext(), purpose="router", max_tokens=1500
-        )
-        answer_llm = HexAdkLlm(
-            router=services.providers, ctx=CallContext(), purpose="chat", max_tokens=1200
-        )
-        router = LlmAgent(
-            name="router",
-            description="Classifies the request: type, complexity, strategy.",
-            model=router_llm,
-            instruction=lambda ctx: (
-                f"{ROUTER_PROMPT}\n\n{ctx.state.get('context_text', '')}\n\n"
-                f"Selected mode: {ctx.state.get('mode', 'auto')}"
-            ),
-            include_contents="none",
-            output_schema=RouterDecision,
-            output_key="router_decision",
-            after_model_callback=schema_guard(
-                RouterDecision, router_llm, key="router", fallback=_router_fallback
-            ),
-            on_model_error_callback=model_error_fallback(
-                RouterDecision, key="router", fallback=_router_fallback
-            ),
-        )
-        answer = LlmAgent(
-            name="answer",
-            description="Answers questions about the project without changing files.",
-            model=answer_llm,
-            instruction=lambda ctx: (
-                ANSWER_PROMPT
-                + ("\n\n" + ASK_MODE_CHANGE_NOTE if ctx.state.get("ask_change_note") else "")
-            ),
-            include_contents="none",
-            before_model_callback=user_message_from_state("context_text"),
-            output_key="answer_text",
-        )
-        super().__init__(
-            name="conversation",
-            description="Routes a developer message and answers, clarifies or starts a run.",
-            sub_agents=[router, answer],
-        )
-        self._services = services
-        self._turn = turn
-        self._router_llm = router_llm
-        self._answer_llm = answer_llm
+def build_conversation_graph(services: Services, turn: dict[str, Any]) -> CompiledStateGraph:
+    """One user message: context (deterministic) -> router (model, Pydantic output) -> policy
+    (deterministic) -> answer | clarify | run."""
+    router_llm = HexChatModel(
+        router=services.providers, ctx=CallContext(), purpose="router", max_tokens=1500
+    )
+    answer_llm = HexChatModel(
+        router=services.providers, ctx=CallContext(), purpose="chat", max_tokens=1200
+    )
 
-    async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
-        services, turn = self._services, self._turn
-        router, answer = self.sub_agents
-
-        # 1. Context (deterministic): files read fresh from disk, history, prior runs.
+    async def context(state: ConversationState) -> ConversationState:
+        # Files read fresh from disk, history, prior runs.
         async with services.sessionmaker() as session:
             project = await session.get(Project, turn["project_id"])
             conversation = await session.get(Conversation, turn["conversation_id"])
@@ -153,33 +103,35 @@ class ConversationAgent(BaseAgent):
                 message=turn["content"],
                 exclude_message_id=turn["message_id"],
             )
-            self._answer_llm.use_context(await chat_context(session))
+            answer_llm.use_context(await chat_context(session))
         turn["context_sources"] = bundle.sources()
         # The current message is left out of the history (no duplicate), so it is added here: the
         # router and the answer must see the question itself, not only the project around it.
-        context_text = f"{bundle.render()}\n\n### The user's latest message\n{turn['content']}"
-        yield state_event(self, ctx, context_text=context_text, mode=turn["mode"])
+        return {
+            "context_text": f"{bundle.render()}\n\n### The user's latest message\n{turn['content']}"
+        }
 
-        # 2. Router (ADK LlmAgent, Pydantic output) -> 3. policy (deterministic).
-        async for event in router.run_async(ctx):
-            yield event
-        state = ctx.session.state
-        status = state.get("router_schema_status", "valid")
-        decision = (
-            RouterDecision.model_validate(state["router_decision"])
-            if status != "fallback" and state.get("router_decision")
-            else None
+    async def router(state: ConversationState) -> ConversationState:
+        result = await structured_call(
+            router_llm,
+            RouterDecision,
+            f"{ROUTER_PROMPT}\n\n{state['context_text']}\n\nSelected mode: {turn['mode']}",
+            agent="router",
+            fallback=_router_fallback,
+            telemetry=None,
+            user_message=turn["content"],
         )
+        decision = result.value if result.status != "fallback" else None
         plan = apply_policy(
             decision, turn["mode"], min_confidence=services.settings.router_min_confidence
         )
-        last = self._router_llm.last_result
+        last = router_llm.last_result
         router_info = {
             "proposal": decision.model_dump() if decision else None,
             "policy": plan.model_dump(),
-            "schema_status": status,
-            "attempts": {"valid": 1, "repaired": 2, "fallback": 2}.get(status, 1),
-            "errors": state.get("router_schema_errors", []),
+            "schema_status": result.status,
+            "attempts": {"valid": 1, "repaired": 2, "fallback": 2}[result.status],
+            "errors": result.errors,
         }
         async with services.sessionmaker.begin() as session:
             row = RouterDecisionRow(
@@ -195,50 +147,70 @@ class ConversationAgent(BaseAgent):
             turn["decision_id"] = row.id
         turn["plan"] = plan
         turn["router"] = router_info
-        yield state_event(
-            self,
-            ctx,
-            route=plan.route,
-            ask_change_note=bool(plan.policy_note and turn["mode"] == "ask"),
-        )
+        return {"route": plan.route}
 
-        # 4. Branch on the policy's route.
-        if plan.route == "answer":
-            # Keep the PM's route (set with the context above) and add the task's complexity.
-            self._answer_llm.use_context(replace(self._answer_llm.ctx, complexity=plan.complexity))
-            try:
-                async for event in answer.run_async(ctx):
-                    yield event
-                text = ctx.session.state.get("answer_text") or ""
-                turn.update(reply=text, reply_kind="answer" if text else "error")
-                if not text:
-                    turn["reply"] = "The model returned an empty answer."
-            except Exception as exc:  # provider failure: report it, never invent an answer
-                turn.update(
-                    reply=f"The model call failed, so there is no answer: {_error_text(exc)}",
-                    reply_kind="error",
-                )
-            result = self._answer_llm.last_result
-            turn["llm"] = (
-                {
-                    "provider": result.provider,
-                    "model": result.model,
-                    "latency_ms": result.latency_ms,
-                    "input_tokens": result.input_tokens,
-                    "output_tokens": result.output_tokens,
-                }
-                if result
-                else None
+    async def answer(state: ConversationState) -> ConversationState:
+        plan: RoutePlan = turn["plan"]
+        # Keep the PM's route (set with the context above) and add the task's complexity.
+        answer_llm.use_context(replace(answer_llm.ctx, complexity=plan.complexity))
+        note = bool(plan.policy_note and turn["mode"] == "ask")
+        system = ANSWER_PROMPT + ("\n\n" + ASK_MODE_CHANGE_NOTE if note else "")
+        try:
+            reply = await answer_llm.ainvoke(
+                [SystemMessage(system), HumanMessage(state["context_text"])]
             )
-        elif plan.route == "clarify":
+            text = reply.text if isinstance(reply.text, str) else str(reply.content)
+            turn.update(reply=text, reply_kind="answer" if text else "error")
+            if not text:
+                turn["reply"] = "The model returned an empty answer."
+        except Exception as exc:  # provider failure: report it, never invent an answer
             turn.update(
-                reply=plan.clarification_question or "Could you clarify the request?",
-                reply_kind="clarification",
-                llm=None,
+                reply=f"The model call failed, so there is no answer: {_error_text(exc)}",
+                reply_kind="error",
             )
-        else:
-            turn.update(await _start_run(services, turn, plan))
-        yield state_event(self, ctx, reply_kind=turn["reply_kind"])
+        result = answer_llm.last_result
+        turn["llm"] = (
+            {
+                "provider": result.provider,
+                "model": result.model,
+                "latency_ms": result.latency_ms,
+                "input_tokens": result.input_tokens,
+                "output_tokens": result.output_tokens,
+            }
+            if result
+            else None
+        )
+        return {}
+
+    async def clarify(state: ConversationState) -> ConversationState:
+        plan: RoutePlan = turn["plan"]
+        turn.update(
+            reply=plan.clarification_question or "Could you clarify the request?",
+            reply_kind="clarification",
+            llm=None,
+        )
+        return {}
+
+    async def run(state: ConversationState) -> ConversationState:
+        turn.update(await _start_run(services, turn, turn["plan"]))
+        return {}
+
+    graph = StateGraph(ConversationState)
+    graph.add_node("context", context, metadata={"hex_kind": "step"})
+    graph.add_node("router", router, metadata={"hex_kind": "llm"})
+    graph.add_node("answer", answer, metadata={"hex_kind": "llm"})
+    graph.add_node("clarify", clarify, metadata={"hex_kind": "step"})
+    graph.add_node("run", run, metadata={"hex_kind": "step"})
+    graph.add_edge(START, "context")
+    graph.add_edge("context", "router")
+    graph.add_conditional_edges(
+        "router",
+        lambda state: state["route"] if state["route"] in ("answer", "clarify") else "run",
+        {"answer": "answer", "clarify": "clarify", "run": "run"},
+    )
+    for node in ("answer", "clarify", "run"):
+        graph.add_edge(node, END)
+    return graph.compile(name="conversation")
 
 
 async def run_conversation(
@@ -250,7 +222,7 @@ async def run_conversation(
     content: str,
     mode: Mode,
 ) -> dict[str, Any]:
-    """Run one message through the ADK conversation flow. Returns reply, reply_kind, plan,
+    """Run one message through the conversation graph. Returns reply, reply_kind, plan,
     decision_id, context_sources, llm and run_id."""
     turn: dict[str, Any] = {
         "conversation_id": conversation_id,
@@ -261,7 +233,7 @@ async def run_conversation(
         "llm": None,
         "run_id": None,
     }
-    await run_adk(ConversationAgent(services, turn), message=content)
+    await run_graph(build_conversation_graph(services, turn), {}, telemetry=None)
     return turn
 
 
@@ -354,7 +326,7 @@ async def _start_run(services: Services, turn: dict[str, Any], plan: RoutePlan) 
 
 
 def _error_text(exc: BaseException) -> str:
-    # ADK may wrap the provider failure; report the innermost message.
+    # The framework may wrap the provider failure; report the innermost message.
     while getattr(exc, "error", None) is not None and isinstance(exc.error, BaseException):
         exc = exc.error
     while exc.__cause__ is not None:

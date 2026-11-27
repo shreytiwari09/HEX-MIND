@@ -1,4 +1,4 @@
-"""What the ADK orchestrator and the CrewAI crew service agree on (plan §1, criterion 6).
+"""What the LangGraph orchestrator and the CrewAI crew service agree on (plan §1, criterion 6).
 
 Each A2A request carries the prompt as its message text and a `hexmind` object in the
 request-level metadata: which run, task and worktree the crew works on, and an `exchange_id`
@@ -29,7 +29,7 @@ def card_path(role: CrewRole) -> str:
 
 
 def agent_name(role: CrewRole) -> str:
-    """The ADK RemoteA2aAgent name, also the A2A agent card name."""
+    """The crew's agent name in run events, also the A2A agent card name."""
     return f"{role}_crew"
 
 

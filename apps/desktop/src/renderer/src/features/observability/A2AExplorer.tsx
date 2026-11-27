@@ -14,7 +14,7 @@ interface Props {
 }
 
 /**
- * Criterion 6: the CrewAI crews the ADK orchestrator reaches over A2A. Agent cards come live
+ * The CrewAI crews the LangGraph orchestrator reaches over A2A. Agent cards come live
  * from the crew service; each exchange joins what the orchestrator (client) and the crew
  * (server) recorded, with the A2A task lifecycle and whether both sides share one trace.
  */
@@ -108,7 +108,7 @@ export function A2AExplorer({ api, events, tasks }: Props) {
                     <li key={step.seq} className="a2a-step" data-side={step.side}>
                       <span className="mono a2a-step__time">{new Date(step.ts).toLocaleTimeString()}</span>
                       <span className="a2a-step__who">
-                        {step.side === 'client' ? 'ADK orchestrator' : 'CrewAI crew'} {step.direction}
+                        {step.side === 'client' ? 'LangGraph orchestrator' : 'CrewAI crew'} {step.direction}
                       </span>
                       {step.state && (
                         <span className="a2a-state" data-state={step.state}>

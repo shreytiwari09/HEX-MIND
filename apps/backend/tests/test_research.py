@@ -1,5 +1,5 @@
 """Advanced research in the PM scoping chat (PRD D62). The models are scripted and the web is
-faked (search and pages); the sessions, runs, events, ADK agents and tool loop are real."""
+faked (search and pages); the sessions, runs, events, LangGraph agents and tool loop are real."""
 
 import json
 from pathlib import Path

@@ -1,29 +1,20 @@
-"""TelemetryHub: every ADK callback type and the CrewAI hooks become run events and spans."""
+"""TelemetryHub: every LangGraph callback type and the CrewAI hooks become run events and spans."""
 
 import uuid
 from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
-from google.adk.agents import LlmAgent, SequentialAgent
-from google.adk.tools import FunctionTool
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from pydantic import BaseModel
 from sqlalchemy import select
 
-from app.agents.adk_llm import HexAdkLlm
 from app.db.models import AgentEvent, Project, Run
-from app.orchestration.adk import model_error_fallback, run_adk, schema_guard
-from app.providers.base import Completion, LLMRequest, ProviderError, ToolCall
+from app.providers.base import Completion, LLMRequest, ToolCall
 from app.providers.router import CallContext
-from app.telemetry.hub import ADK_HOOKS, TelemetryHub, describe_step
+from app.telemetry.hub import TelemetryHub, describe_step
 from app.telemetry.tracing import add_span_processor
 from tests.conftest import ScriptedAdapter, use_adapter
-
-
-class Verdict(BaseModel):
-    ok: bool
 
 
 def lookup(key: str) -> dict:
@@ -63,133 +54,6 @@ async def _events(app: FastAPI, run_id: uuid.UUID) -> list[AgentEvent]:
         )
 
 
-def _llm(app: FastAPI, run_id: uuid.UUID) -> HexAdkLlm:
-    return HexAdkLlm(
-        router=app.state.services.providers, ctx=CallContext(run_id=run_id), purpose="coder"
-    )
-
-
-async def test_every_adk_callback_type_is_recorded(
-    app: FastAPI, spans: InMemorySpanExporter
-) -> None:
-    def handler(request: LLMRequest) -> Completion:
-        if "explode" in (request.messages[0].content or ""):
-            if any(m.role == "tool" for m in request.messages):
-                return Completion(content="unreachable")
-            return Completion(
-                tool_calls=[ToolCall(id="c2", name="explode", arguments={"key": "a"})]
-            )
-        if "broken model" in (request.messages[0].content or ""):
-            raise ProviderError("model down", retryable=False)
-        if any(m.role == "tool" for m in request.messages):
-            return Completion(content='{"ok": true}', input_tokens=12, output_tokens=3)
-        return Completion(
-            tool_calls=[ToolCall(id="c1", name="lookup", arguments={"key": "a"})],
-            input_tokens=10,
-            output_tokens=2,
-        )
-
-    use_adapter(app, ScriptedAdapter(handler))
-    run_id = await _run(app)
-    hub = TelemetryHub(app.state.services, run_id)
-
-    llm = _llm(app, run_id)
-    checker = LlmAgent(
-        name="checker",
-        model=llm,
-        instruction="Check the value.",
-        tools=[FunctionTool(lookup)],
-        output_schema=Verdict,
-        output_key="verdict",
-        after_model_callback=schema_guard(
-            Verdict, llm, key="verdict", fallback=lambda e: Verdict(ok=False)
-        ),
-    )
-    root = hub.instrument(SequentialAgent(name="pipeline", sub_agents=[checker]))
-    state, _ = await run_adk(root, message="go")
-    assert state["verdict"] == {"ok": True}
-
-    # Error hooks: a failing tool and a failing model (both re-raise: telemetry only observes).
-    tool_agent = hub.instrument(
-        LlmAgent(
-            name="tool_user",
-            model=_llm(app, run_id),
-            instruction="explode",
-            tools=[FunctionTool(explode)],
-        )
-    )
-    with pytest.raises(Exception, match="tool broke"):
-        await run_adk(tool_agent, message="go")
-    model_agent = hub.instrument(
-        LlmAgent(name="model_user", model=_llm(app, run_id), instruction="broken model")
-    )
-    with pytest.raises(Exception, match="model down"):
-        await run_adk(model_agent, message="go")
-
-    events = await _events(app, run_id)
-    hooks = {e.payload["hook"] for e in events if e.type == "callback_fired"}
-    started = [(e.payload["agent"], e.payload["kind"]) for e in events if e.type == "agent_started"]
-    finished = {e.payload["agent"] for e in events if e.type == "agent_finished"}
-    assert hooks | {"before_agent_callback", "after_agent_callback"} == set(ADK_HOOKS)
-    assert ("pipeline", "sequential") in started and ("checker", "llm") in started
-    assert {"pipeline", "checker"} <= finished
-    assert all(e.payload["framework"] == "adk" for e in events if "framework" in e.payload)
-    after_model = next(
-        e
-        for e in events
-        if e.type == "callback_fired" and e.payload["hook"] == "after_model_callback"
-    )
-    assert "scripted/scripted-model" in after_model.payload["detail"]
-    assert "calls lookup" in after_model.payload["detail"]
-    schema = [e.payload for e in events if e.type == "schema_validated"]
-    assert schema == [
-        {"agent": "checker", "schema_name": "Verdict", "status": "valid", "errors": []}
-    ]
-    seqs = [e.seq for e in events]
-    assert seqs == list(range(1, len(seqs) + 1))
-
-    # ADK's own spans carry our attributes.
-    attrs = [dict(s.attributes or {}) for s in spans.get_finished_spans()]
-    assert any(
-        a.get("agent.framework") == "adk" and a.get("hexmind.run_id") == str(run_id) for a in attrs
-    )
-    assert any(a.get("llm.provider") == "scripted" for a in attrs)
-    assert any(a.get("tool.name") == "lookup" for a in attrs)
-
-
-async def test_model_error_fallback_records_schema_fallback(app: FastAPI) -> None:
-    def handler(request: LLMRequest) -> Completion:
-        raise ProviderError("quota", retryable=False)
-
-    use_adapter(app, ScriptedAdapter(handler))
-    run_id = await _run(app)
-    hub = TelemetryHub(app.state.services, run_id)
-    llm = _llm(app, run_id)
-    agent = hub.instrument(
-        LlmAgent(
-            name="judge",
-            model=llm,
-            instruction="Judge.",
-            output_schema=Verdict,
-            output_key="verdict",
-            after_model_callback=schema_guard(
-                Verdict, llm, key="verdict", fallback=lambda e: Verdict(ok=False)
-            ),
-            on_model_error_callback=model_error_fallback(
-                Verdict, key="verdict", fallback=lambda e: Verdict(ok=False)
-            ),
-        )
-    )
-    state, _ = await run_adk(agent, message="go")
-    assert state["verdict"] == {"ok": False}
-
-    events = await _events(app, run_id)
-    hooks = [e.payload["hook"] for e in events if e.type == "callback_fired"]
-    assert "on_model_error_callback" in hooks
-    (schema,) = [e.payload for e in events if e.type == "schema_validated"]
-    assert schema["status"] == "fallback" and "quota" in schema["errors"][0]
-
-
 async def test_crew_callbacks_record_from_a_worker_thread(
     app: FastAPI, spans: InMemorySpanExporter
 ) -> None:
@@ -226,3 +90,173 @@ def test_describe_step() -> None:
     assert describe_step(SimpleNamespace(tool="read_file")) == "SimpleNamespace: read_file"
     assert describe_step(SimpleNamespace(output="final")) == "SimpleNamespace: final"
     assert describe_step(object()) == "object"
+
+
+# ---------- LangGraph ----------
+
+
+def _lg_graph(app: FastAPI, run_id: uuid.UUID):
+    """thinker (an LLM node asking for two tools) -> tools (a ToolNode; one tool fails)."""
+    from typing import Annotated, TypedDict
+
+    from langchain_core.tools import tool
+    from langgraph.graph import END, START, StateGraph
+    from langgraph.graph.message import add_messages
+    from langgraph.prebuilt import ToolNode
+
+    from app.agents.chat_model import HexChatModel
+
+    @tool
+    def lookup_tool(key: str) -> dict:
+        """Look up a value."""
+        return lookup(key)
+
+    @tool
+    def explode_tool(key: str) -> dict:
+        """Always fails."""
+        return explode(key)
+
+    class State(TypedDict):
+        messages: Annotated[list, add_messages]
+
+    model = HexChatModel(
+        router=app.state.services.providers, ctx=CallContext(run_id=run_id), purpose="coder"
+    ).bind_tools([lookup_tool, explode_tool])
+
+    async def thinker(state: State) -> dict:
+        return {"messages": [await model.ainvoke(state["messages"])]}
+
+    graph = StateGraph(State)
+    graph.add_node("thinker", thinker, metadata={"hex_kind": "llm"})
+    graph.add_node(
+        "tools",
+        ToolNode([lookup_tool, explode_tool], handle_tool_errors=True),
+        metadata={"hex_kind": "tools"},
+    )
+    graph.add_edge(START, "thinker")
+    graph.add_edge("thinker", "tools")
+    graph.add_edge("tools", END)
+    return graph.compile(name="demo_graph")
+
+
+def _tool_calling_adapter() -> ScriptedAdapter:
+    def handler(request: LLMRequest) -> Completion:
+        return Completion(
+            content="",
+            tool_calls=[
+                ToolCall(id="c1", name="lookup_tool", arguments={"key": "a"}),
+                ToolCall(id="c2", name="explode_tool", arguments={"key": "b"}),
+            ],
+            input_tokens=12,
+            output_tokens=4,
+        )
+
+    return ScriptedAdapter(handler)
+
+
+async def test_every_langgraph_callback_type_is_recorded(app: FastAPI) -> None:
+    from langchain_core.messages import HumanMessage
+
+    from app.orchestration.graph import run_graph
+
+    use_adapter(app, _tool_calling_adapter())
+    run_id = await _run(app)
+    hub = TelemetryHub(app.state.services, run_id)
+
+    await run_graph(
+        _lg_graph(app, run_id), {"messages": [HumanMessage("go")]}, telemetry=hub, parent="execute"
+    )
+
+    events = await _events(app, run_id)
+    started = {e.payload["agent"]: e.payload for e in events if e.type == "agent_started"}
+    assert set(started) >= {"demo_graph", "thinker", "tools"}
+    assert started["demo_graph"]["parent"] == "execute"
+    assert started["thinker"]["parent"] == "demo_graph" and started["thinker"]["kind"] == "llm"
+    assert {p["framework"] for p in started.values()} == {"langgraph"}
+    finished = [e.payload for e in events if e.type == "agent_finished"]
+    assert {p["agent"] for p in finished} >= {"demo_graph", "thinker", "tools"}
+    assert all(p["ok"] for p in finished)
+    hooks = {e.payload["hook"] for e in events if e.type == "callback_fired"}
+    assert hooks >= {"model_start", "model_end", "tool_start", "tool_end", "tool_error"}
+    (model_end,) = [e.payload for e in events if e.payload.get("hook") == "model_end"]
+    assert model_end["agent"] == "thinker" and "12→4 tokens" in model_end["detail"]
+
+
+async def test_handler_survives_record_failure(app: FastAPI, monkeypatch) -> None:
+    from langchain_core.messages import HumanMessage
+
+    from app.orchestration.graph import run_graph
+
+    use_adapter(app, _tool_calling_adapter())
+    run_id = await _run(app)
+    hub = TelemetryHub(app.state.services, run_id)
+
+    async def broken(*args, **kwargs):
+        raise RuntimeError("database down")
+
+    monkeypatch.setattr(hub, "record", broken)
+    state = await run_graph(
+        _lg_graph(app, run_id), {"messages": [HumanMessage("go")]}, telemetry=hub
+    )
+
+    assert len(state["messages"]) == 4  # human, AI with 2 tool calls, 2 tool results
+
+
+async def test_abort_open_closes_graph_agents_once(app: FastAPI) -> None:
+    """A failed run or task (lease lost, cancelled) can leave graph agents without an end callback;
+    abort_open records them as failed, and a late end callback does not record them twice."""
+    run_id = await _run(app)
+    hub = TelemetryHub(app.state.services, run_id)
+    handler = hub.handler(parent="execute")
+    root, node = uuid.uuid4(), uuid.uuid4()
+
+    await handler.on_chain_start({}, {}, run_id=root, name="reflection_loop", metadata={})
+    await handler.on_chain_start(
+        {}, {}, run_id=node, parent_run_id=root, name="coder", metadata={"langgraph_node": "coder"}
+    )
+    await hub.abort_open(error="run failed")
+    await handler.on_chain_end({}, run_id=node)
+
+    events = await _events(app, run_id)
+    finished = [(e.payload["agent"], e.payload["ok"], e.payload["framework"])
+                for e in events if e.type == "agent_finished"]  # fmt: skip
+    assert sorted(finished) == [
+        ("coder", False, "langgraph"),
+        ("reflection_loop", False, "langgraph"),
+    ]
+
+
+async def test_langgraph_agents_model_and_tool_calls_become_nested_spans(
+    app: FastAPI, spans: InMemorySpanExporter
+) -> None:
+    """The Traces view reads these spans (agent, model and tool kinds)."""
+    from langchain_core.messages import HumanMessage
+
+    from app.api.traces import kind_of
+    from app.orchestration.graph import run_graph
+
+    use_adapter(app, _tool_calling_adapter())
+    run_id = await _run(app)
+    hub = TelemetryHub(app.state.services, run_id)
+
+    await run_graph(_lg_graph(app, run_id), {"messages": [HumanMessage("go")]}, telemetry=hub)
+
+    mine = [
+        s for s in spans.get_finished_spans() if s.attributes.get("hexmind.run_id") == str(run_id)
+    ]
+    by_name = {s.name: s for s in mine}
+    assert {"invoke_agent demo_graph", "invoke_agent thinker", "call_llm",
+            "execute_tool lookup_tool", "execute_tool explode_tool"} <= set(by_name)  # fmt: skip
+    graph, thinker, model = (
+        by_name["invoke_agent demo_graph"],
+        by_name["invoke_agent thinker"],
+        by_name["call_llm"],
+    )
+    assert thinker.parent.span_id == graph.context.span_id
+    assert model.parent.span_id == thinker.context.span_id
+    assert model.attributes["llm.provider"] == "scripted"
+    assert model.attributes["llm.input_tokens"] == 12
+    assert thinker.attributes["agent.framework"] == "langgraph"
+    assert by_name["execute_tool lookup_tool"].attributes["tool.name"] == "lookup_tool"
+    assert not by_name["execute_tool explode_tool"].status.is_ok
+    assert [kind_of(s.name, dict(s.attributes)) for s in (thinker, model)] == ["agent", "model"]

@@ -135,7 +135,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -195,6 +195,7 @@
         "framework": {
           "enum": [
             "adk",
+            "langgraph",
             "crewai"
           ],
           "type": "string"
@@ -238,7 +239,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -287,6 +288,7 @@
         "framework": {
           "enum": [
             "adk",
+            "langgraph",
             "crewai"
           ],
           "type": "string"
@@ -340,7 +342,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -431,7 +433,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -473,7 +475,7 @@
     },
     "CallbackFired": {
       "additionalProperties": false,
-      "description": "One framework callback, e.g. ADK before_model_callback or CrewAI step_callback.",
+      "description": "One framework callback, e.g. LangGraph model_start or CrewAI step_callback.",
       "properties": {
         "agent": {
           "type": "string"
@@ -492,6 +494,7 @@
         "framework": {
           "enum": [
             "adk",
+            "langgraph",
             "crewai"
           ],
           "type": "string"
@@ -534,7 +537,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -634,7 +637,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -712,7 +715,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -806,7 +809,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -887,7 +890,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -986,7 +989,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -1092,7 +1095,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -1183,7 +1186,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -1288,7 +1291,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -1379,7 +1382,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -1560,7 +1563,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -1625,7 +1628,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -1711,7 +1714,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -1813,7 +1816,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -1895,7 +1898,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -2000,7 +2003,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -2082,7 +2085,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -2168,7 +2171,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -2256,7 +2259,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -2334,7 +2337,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -2456,7 +2459,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -2542,7 +2545,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -2633,7 +2636,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -2735,7 +2738,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -2813,7 +2816,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -2908,7 +2911,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -3007,7 +3010,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -3085,7 +3088,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -3163,7 +3166,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -3249,7 +3252,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -3360,7 +3363,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -3438,7 +3441,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -3516,7 +3519,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -3611,7 +3614,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -3714,7 +3717,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -3800,7 +3803,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "type": "integer"
         },
         "seq": {
@@ -3841,7 +3844,7 @@
       "type": "object"
     }
   },
-  "description": "H.E.X Mind agent event, schema version 8.",
+  "description": "H.E.X Mind agent event, schema version 9.",
   "discriminator": {
     "mapping": {
       "a2a_message": "#/$defs/A2AMessageEvent",

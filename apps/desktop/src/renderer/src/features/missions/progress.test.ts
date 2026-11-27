@@ -18,7 +18,7 @@ import {
 import { mission } from './fixtures'
 import type { MissionStatus } from './types'
 
-const base = { schema_version: 8 as const, event_id: 'e', run_id: 'r1', ts: '2026-11-19T10:00:00Z', agent_id: null, task_id: null }
+const base = { schema_version: 9 as const, event_id: 'e', run_id: 'r1', ts: '2026-11-19T10:00:00Z', agent_id: null, task_id: null }
 
 describe('progressOf and activeFeature', () => {
   it('counts finished (done or skipped) features and milestones from the real statuses', () => {

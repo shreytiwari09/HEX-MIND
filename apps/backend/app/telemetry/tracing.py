@@ -1,5 +1,5 @@
-"""OpenTelemetry setup. ADK creates its own spans (agent, model and tool calls) on the global
-tracer provider; the TelemetryHub adds our attributes to them and opens spans for CrewAI crews.
+"""OpenTelemetry setup. The TelemetryHub's LangGraph handler opens spans for graph agents, model
+calls and tool calls on the global tracer provider, and opens spans for CrewAI crews.
 
 Spans are exported to a collector when `HEXMIND_OTLP_ENDPOINT` is set (e.g. the Jaeger in
 docker-compose.yml: `docker compose --profile observability up -d`), and always kept in Postgres

@@ -36,7 +36,7 @@ function makeView(extra: Partial<MissionView> = {}): MissionView & { adopt: Retu
   } as MissionView & { adopt: ReturnType<typeof vi.fn> }
 }
 
-const base = { schema_version: 8 as const, event_id: 'e', run_id: 'r1', ts: '2026-11-19T10:00:00Z', agent_id: null, task_id: null }
+const base = { schema_version: 9 as const, event_id: 'e', run_id: 'r1', ts: '2026-11-19T10:00:00Z', agent_id: null, task_id: null }
 
 beforeEach(() => {
   vi.stubGlobal('confirm', vi.fn(() => true))

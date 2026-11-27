@@ -1,5 +1,6 @@
-"""The orchestrator side of A2A: calling CrewAI crews through ADK `RemoteA2aAgent`, and running
-the crew service process in development.
+"""The orchestrator side of A2A: calling the CrewAI crews with the `a2a-sdk` client (A2A is an
+open protocol; no agent framework is needed on this side), and running the crew service process
+in development.
 """
 
 import asyncio
@@ -7,14 +8,14 @@ import logging
 import subprocess
 import sys
 import time
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import httpx
-from a2a.types import Part, TextPart
-from google.adk.agents.remote_a2a_agent import A2A_METADATA_PREFIX, RemoteA2aAgent
-from google.adk.events import Event
+from a2a.client import A2ACardResolver, A2AClientTimeoutError, ClientConfig, ClientFactory
+from a2a.types import Message, Part, Role, Task, TextPart
 
 from app.a2a.protocol import (
     ROLES,
@@ -27,7 +28,6 @@ from app.a2a.protocol import (
 )
 from app.config import Settings
 from app.events.log import EventType
-from app.orchestration.adk import run_adk
 from app.telemetry.hub import TelemetryHub
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ class CrewCallTimedOut(CrewCallFailed):
 
 def _timed_out(exc: BaseException | None) -> bool:
     while exc is not None:
-        if isinstance(exc, (httpx.TimeoutException, TimeoutError)):
+        if isinstance(exc, (httpx.TimeoutException, TimeoutError, A2AClientTimeoutError)):
             return True
         exc = exc.__cause__ or exc.__context__
     return False
@@ -61,29 +61,41 @@ def a2a_http_client(settings: Settings, **kwargs: Any) -> httpx.AsyncClient:
     )
 
 
-def remote_crew(
+async def _send(
     role: CrewRole,
     *,
     settings: Settings,
     http: httpx.AsyncClient,
     request: CrewRequest,
     prompt: str,
-) -> RemoteA2aAgent:
-    """An ADK RemoteA2aAgent for one crew call. The message is exactly `prompt` (not the ADK
-    session history); run/task/worktree and trace context go in the request metadata."""
-
-    def context_builder(ctx: Any, name: str, converter: Any) -> tuple[list[Part], None]:
-        return [Part(root=TextPart(text=prompt))], None
-
-    return RemoteA2aAgent(
-        name=agent_name(role),
-        description=f"CrewAI {role} crew (A2A)",
-        agent_card=f"{settings.crew_service_url.rstrip('/')}{card_path(role)}",
+) -> tuple[str, Task | None, str | None]:
+    """One A2A `message/send` to a crew: read its Agent Card, send `prompt` with the request
+    metadata (run/task/worktree and trace context), and wait for the finished task.
+    Returns the result text, the A2A task and any error text."""
+    card = await A2ACardResolver(
         httpx_client=http,
-        timeout=settings.a2a_timeout_s,
-        context_builder=context_builder,
-        a2a_request_meta_provider=lambda ctx, message: request_metadata(request),
+        base_url=settings.crew_service_url.rstrip("/"),
+        agent_card_path=card_path(role),
+    ).get_agent_card()
+    client = ClientFactory(ClientConfig(streaming=False, httpx_client=http)).create(card)
+    message = Message(
+        role=Role.user, message_id=uuid.uuid4().hex, parts=[Part(root=TextPart(text=prompt))]
     )
+    task: Task | None = None
+    async for event in client.send_message(message, request_metadata=request_metadata(request)):
+        if isinstance(event, tuple) and isinstance(event[0], Task):
+            task = event[0]
+        elif isinstance(event, Message):  # a direct reply without a task
+            return _text(event.parts), None, None
+    if task is None:
+        return "", None, "no task in the reply"
+    text = "\n".join(_text(a.parts) for a in task.artifacts or []).strip()
+    error = _text(task.status.message.parts) if task.status.message else None
+    return text, task, error
+
+
+def _text(parts: list[Part]) -> str:
+    return "\n".join(p.root.text for p in parts if isinstance(p.root, TextPart)).strip()
 
 
 async def call_crew(
@@ -99,8 +111,6 @@ async def call_crew(
     """Send `prompt` to a crew over A2A and return its result text. Both ends of the exchange
     are recorded as `a2a_message` events joined by `exchange_id`."""
     name = agent_name(role)
-    agent = remote_crew(role, settings=settings, http=http, request=request, prompt=prompt)
-    hub.instrument(agent, task_id=request.task_id, parent=parent)
 
     async def note(direction: str, state: str | None, **extra: Any) -> None:
         await hub.record(
@@ -116,27 +126,38 @@ async def call_crew(
             **extra,
         )
 
+    async def agent_event(type: EventType, **extra: Any) -> None:
+        await hub.record(
+            type, task_id=request.task_id, agent_id=name, agent=name, framework="langgraph", **extra
+        )
+
     started = time.monotonic()
+    await agent_event(EventType.AGENT_STARTED, kind="remote_a2a", parent=parent)
     await note("sent", None, trace_id=current_trace_id(), summary=prompt[:200])
     try:
-        _, events = await run_adk(agent, message=prompt)
+        text, task, error = await _send(
+            role, settings=settings, http=http, request=request, prompt=prompt
+        )
     except Exception as exc:
+        duration = int((time.monotonic() - started) * 1000)
         await note("received", "failed", summary=f"{type(exc).__name__}: {exc}"[:300])
+        await agent_event(EventType.AGENT_FINISHED, ok=False, duration_ms=duration)
         if _timed_out(exc):
             raise CrewCallTimedOut(f"{name} did not answer in time: {exc}"[:500]) from exc
         raise CrewCallFailed(f"{name} A2A call failed: {exc}") from exc
-    text, meta, error, state = _reply(events, name)
     duration = int((time.monotonic() - started) * 1000)
+    state = task.status.state.value if task is not None else ("failed" if error else "completed")
     if state == "completed" and not text:
         state, error = "failed", "empty reply"
     await note(
         "received",
         state,
-        a2a_task_id=meta.get(A2A_METADATA_PREFIX + "task_id"),
-        context_id=meta.get(A2A_METADATA_PREFIX + "context_id"),
+        a2a_task_id=task.id if task is not None else None,
+        context_id=task.context_id if task is not None else None,
         duration_ms=duration,
         summary=(error or text or "(empty reply)")[:300],
     )
+    await agent_event(EventType.AGENT_FINISHED, ok=state == "completed", duration_ms=duration)
     if state != "completed":
         raise CrewCallFailed(f"{name} A2A task {state}: {error or text or 'no result'}"[:500])
     return text
@@ -155,29 +176,6 @@ async def call_crew_with_resend(*, resends: int, **kwargs: Any) -> str:
                 raise
             logger.warning("no answer from the crew; sending the request again (%s)", attempt + 1)
     raise AssertionError("unreachable")
-
-
-def _reply(events: list[Event], author: str) -> tuple[str, dict[str, Any], str | None, str]:
-    """The remote agent's text, its A2A metadata, any error, and the A2A task's final state.
-    A failed A2A task still comes back as an ordinary ADK event whose text is the failure
-    message, so the state is read from the A2A response itself."""
-    texts: list[str] = []
-    meta: dict[str, Any] = {}
-    error: str | None = None
-    for event in events:
-        if event.author != author:
-            continue
-        meta.update(event.custom_metadata or {})
-        if event.error_message:
-            error = event.error_message
-        for part in (event.content.parts if event.content else None) or []:
-            if part.text and not part.thought:
-                texts.append(part.text)
-    error = error or meta.get(A2A_METADATA_PREFIX + "error")
-    response = meta.get(A2A_METADATA_PREFIX + "response")
-    status = response.get("status") if isinstance(response, dict) else None
-    state = str((status or {}).get("state") or ("failed" if error else "completed"))
-    return "\n".join(texts).strip(), meta, error, state.removeprefix("TaskState.")
 
 
 async def agent_cards(http: httpx.AsyncClient) -> list[dict[str, Any]]:
