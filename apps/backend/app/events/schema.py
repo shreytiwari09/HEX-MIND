@@ -12,8 +12,9 @@ the mission events (mission, milestone and feature status, handoffs, checkpoints
 that the Mission Control stream carries. v5 (P4) adds key_rotated, a pool key swapped after a
 rate limit, quota or auth error. v6 (P4) adds budget_warning and escalated. v7 (P5) adds
 validator_started and validator_reported. v8 (P7) adds the request and response hashes to
-llm_call_completed (the audit trail). Any change needs agreement from all owners and bumps
-SCHEMA_VERSION.
+llm_call_completed (the audit trail). v9 (D88) adds the "langgraph" framework: Google ADK was
+replaced by LangGraph; "adk" stays valid for events recorded before. Any change needs agreement
+from all owners and bumps SCHEMA_VERSION.
 
 Payloads carry `stub: true` when the work they describe was not really performed (M2 worker
 stubs). The UI must label such events instead of presenting them as agent progress.
@@ -24,10 +25,10 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 Complexity = Literal["low", "medium", "high"]
-Framework = Literal["adk", "crewai"]
+Framework = Literal["adk", "langgraph", "crewai"]
 
 
 class EventType(StrEnum):
@@ -217,7 +218,7 @@ class AgentFinished(Payload):
 
 
 class CallbackFired(Payload):
-    """One framework callback, e.g. ADK before_model_callback or CrewAI step_callback."""
+    """One framework callback, e.g. LangGraph model_start or CrewAI step_callback."""
 
     framework: Framework
     hook: str

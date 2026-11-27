@@ -1,8 +1,8 @@
 """Agent roles (plan §6). Planner and Coder are CrewAI agents, run as single-agent,
-single-task crews from ADK run agents; the Reviewer is an ADK LlmAgent (orchestration.run) whose
-schema and prompt live here. Outputs are JSON validated with Pydantic; the agents' claims are
-never trusted for facts we can measure (changed files come from git, check results from the
-sandbox)."""
+single-task crews from LangGraph nodes; the Reviewer is a structured model call in the run's
+reflection loop (orchestration.run) whose schema and prompt live here. Outputs are JSON
+validated with Pydantic; the agents' claims are never trusted for facts we can measure (changed
+files come from git, check results from the sandbox)."""
 
 import contextlib
 import json

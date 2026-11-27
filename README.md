@@ -12,7 +12,7 @@ and you review the result before a single file of yours changes.
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-6d73f2)
 ![Platforms](https://img.shields.io/badge/runs%20on-macOS%20·%20Windows%20·%20Linux-3a4256)
-![Google ADK](https://img.shields.io/badge/orchestration-Google%20ADK-4285F4)
+![LangGraph](https://img.shields.io/badge/orchestration-LangGraph-1C3C3C)
 ![CrewAI](https://img.shields.io/badge/agents-CrewAI-FF5A50)
 ![A2A](https://img.shields.io/badge/agents%20talk%20via-A2A-1F7A70)
 ![MCP](https://img.shields.io/badge/tools-MCP-2B3A67)
@@ -44,7 +44,7 @@ Most AI coding tools are one agent doing everything: planning, writing, and grad
 
 - 🧠 **Any model, per team member.** OpenAI, Anthropic, Gemini, Groq, DeepSeek, Mistral, xAI, NVIDIA, OpenRouter, Ollama (local) or any OpenAI-compatible endpoint. **Auto** picks a model for each role from what *your* account can call, measured: free first, refused never, speed and rate limits shown.
 - 🛡️ **Safe by default.** Agents work in a git worktree; generated code only runs in a hardened container; API keys never reach the sandbox, the UI, logs or git.
-- 🔭 **Full observability.** A live team view (who is working on what, right now, from real events), agent topology (ADK → A2A → CrewAI), every model call with tokens, cost and latency, and a trace per run.
+- 🔭 **Full observability.** A live team view (who is working on what, right now, from real events), agent topology (LangGraph → A2A → CrewAI), every model call with tokens, cost and latency, and a trace per run.
 - 🧩 **Skills and plugins.** 28 built-in skills (SKILL.md), install more from GitHub (Claude and Codex skills work), and attach MCP servers per team member.
 - ⌨️ **Feels like an IDE.** Monaco editor, file explorer, command palette (<kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd>), keyboard shortcuts, status bar, a terminal into the project's sandbox.
 - 📏 **Measured, not claimed.** A built-in evaluation harness (benchmark missions with hidden tests) to compare models and setups.
@@ -56,7 +56,7 @@ Most AI coding tools are one agent doing everything: planning, writing, and grad
 </tr>
 <tr>
 <td><img src="docs/images/team.webp" alt="Team models: each persona with its model, chosen by Auto with the measured reason"><br><sub><b>Team models.</b> Auto explains each choice with what it measured on your account.</sub></td>
-<td><img src="docs/images/topology.webp" alt="Observability topology: Google ADK orchestration reaching CrewAI crews over A2A"><br><sub><b>Topology.</b> Which framework did what: ADK orchestrates, CrewAI crews work, over A2A.</sub></td>
+<td><img src="docs/images/topology.webp" alt="Observability topology: orchestration reaching CrewAI crews over A2A"><br><sub><b>Topology.</b> Which framework did what: LangGraph orchestrates, CrewAI crews work, over A2A. (Captured before ADK was replaced by LangGraph, so it still says ADK.)</sub></td>
 </tr>
 <tr>
 <td><img src="docs/images/agents.webp" alt="Agent editor: instructions and skills of the PM persona"><br><sub><b>Agents and skills.</b> Every team member's instructions, skills, plugins and model are editable.</sub></td>
@@ -152,7 +152,7 @@ flowchart TB
 
     subgraph Backend["Backend (FastAPI, localhost)"]
         CHAT["Chat service<br/>Ask / Edit / Auto router · PM answers"]
-        ADK["Google ADK workflow<br/>mission runner · scoping · handoffs"]
+        LG["LangGraph workflows<br/>mission runner · scoping · handoffs"]
         PR["ProviderRouter<br/>every model call · keys · fallbacks · cost"]
         AUTO["Auto assigner<br/>measured speed · limits · failures"]
         APPS["App runner · CLI runner · terminal"]
@@ -170,21 +170,21 @@ flowchart TB
     LLM["Model providers<br/>or local Ollama"]
 
     UI -- "REST + token" --> CHAT
-    UI --> ADK
-    ADK -- "A2A (JSON-RPC)" --> P
+    UI --> LG
+    LG -- "A2A (JSON-RPC)" --> P
     P --> MCP --> WT
     MCP -- "checks by name" --> SB --> WT
     CHAT --> PR
     P --> PR
-    ADK --> PR
+    LG --> PR
     AUTO --> PR
     PR --> LLM
-    ADK --> TEL --> DB
+    LG --> TEL --> DB
     OBS --> TEL
     APPS --> SB
 ```
 
-- **Two agent frameworks, one protocol.** Google ADK owns the mission workflow (deterministic steps and LLM agents); each persona is a CrewAI crew in a separate service, reached over **A2A**. Neither framework calls a model directly: every call goes through `ProviderRouter`, which picks the connection, applies fallbacks and rate-limit cooldowns, and records tokens, cost and latency.
+- **Two agent frameworks, one protocol.** LangGraph owns the mission workflow (state graphs of deterministic steps and model calls); each persona is a CrewAI crew in a separate service, reached over **A2A**. Neither framework calls a model directly: every call goes through `ProviderRouter`, which picks the connection, applies fallbacks and rate-limit cooldowns, and records tokens, cost and latency.
 - **MCP is the agents' only way to touch files.** Reads and writes are path-guarded to the worktree; checks run by *name* (`install`, `test`, `acceptance`) from the project's run contract, so an agent cannot run arbitrary commands on your machine.
 - **Evidence over claims.** A feature is done when its checks pass in the sandbox; the changed files come from `git diff`, not from the agent's report.
 
@@ -194,7 +194,7 @@ flowchart TB
 sequenceDiagram
     autonumber
     actor You
-    participant PM as PM (ADK + CrewAI)
+    participant PM as PM (LangGraph + CrewAI)
     participant QA
     participant Eng as Engineer
     participant SB as Sandbox
@@ -314,14 +314,14 @@ npm run package           # installer for this OS
 
 ```
 apps/desktop/    Electron main (window, app:// protocol), preload (3 calls), React renderer
-apps/backend/    FastAPI: orchestration (ADK), agents (CrewAI), a2a, providers, router,
+apps/backend/    FastAPI: orchestration (LangGraph), agents (CrewAI), a2a, providers, router,
                  mcp_server, sandbox, workspace, missions, catalog, telemetry, evaluation
 design/logo/     logo, app icon and lockups (SVG + PNG)
 docs/standards/  coding standards the agents load at runtime
 PRD.md           product requirements and every decision (§21)
 ```
 
-Hard rules for contributors are in [CLAUDE.md](CLAUDE.md): CrewAI and Google ADK only, every model call through `ProviderRouter`, keys never leave the backend, generated code is untrusted.
+Hard rules for contributors are in [CLAUDE.md](CLAUDE.md): LangGraph and CrewAI only, every model call through `ProviderRouter`, keys never leave the backend, generated code is untrusted.
 
 ## License
 

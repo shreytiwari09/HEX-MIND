@@ -8,7 +8,8 @@ import { FrameworkBadge } from './FrameworkBadge'
 
 const MAX_ROWS = 500
 
-/** Criterion 5: every ADK and CrewAI callback the TelemetryHub received, newest first. */
+/** Every LangGraph and CrewAI callback the TelemetryHub received, newest first (and ADK ones from
+ * runs recorded before the move to LangGraph). */
 export function CallbackStream({ events }: { events: AgentEvent[] }) {
   const [framework, setFramework] = useState<Framework | 'all'>('all')
   const [hook, setHook] = useState('all')
@@ -40,8 +41,9 @@ export function CallbackStream({ events }: { events: AgentEvent[] }) {
           Framework{' '}
           <select value={framework} onChange={(e) => setFramework(e.target.value as Framework | 'all')}>
             <option value="all">All</option>
-            <option value="adk">ADK</option>
+            <option value="langgraph">LangGraph</option>
             <option value="crewai">CrewAI</option>
+            <option value="adk">ADK (older runs)</option>
           </select>
         </label>
         <label>

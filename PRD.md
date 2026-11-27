@@ -13,7 +13,7 @@
 > **Rule:** no new planning `.md` files. Change this document instead, and record each change in §21.
 
 **Hard rules (never broken)**
-1. **Agent frameworks:** CrewAI and Google ADK only.
+1. **Agent frameworks:** LangGraph and CrewAI only (Google ADK until D88).
    - Infrastructure libraries are not agent frameworks and are allowed: FastAPI, SQLAlchemy, Postgres, ChromaDB, the MCP SDK, the A2A SDK, OpenTelemetry, Docker, React and Electron.
    - Other agent frameworks (LangGraph, AutoGen, OpenAI Agents SDK, …) are not allowed.
 2. **No fabrication.** Agent activity, tokens, cost, latency, progress and test results shown anywhere come only from real recorded data.
@@ -21,7 +21,7 @@
 4. **The user's files change only when the user applies a result.** Agents work in an isolated git worktree.
 5. **Agent claims are not evidence.** Changed files come from git, command results come from the sandbox, and pass/fail comes from tests that actually ran.
 6. **No reuse of subscription logins.** Consumer logins (Claude Pro/Max, ChatGPT, Google accounts) are never used to call models directly. Only API keys are used, plus, as future scope, the official CLIs the user has installed (§10.9).
-7. **API keys never reach the renderer, logs or git.** They're stored in the OS keychain locally and in a secret manager in the cloud.
+7. **API keys never reach the renderer, logs or git.** They're stored in the OS keychain.
 
 ---
 
@@ -69,7 +69,7 @@ What makes it different:
   - Failures go back to the builder, then escalate to a stronger model, then to the user.
 - **Everything is visible.** Mission Control shows progress, the active feature, live worker output, costs and which model did what. Developer mode exposes code, diffs, traces, A2A messages and the audit log.
 
-Under the hood it's built from four runtime agent types on **Google ADK** (orchestration) and **CrewAI** (workers), connected over **A2A**, with tools over **MCP**. It is also a course project graded on 11 requirements (§16), which this design covers.
+Under the hood it's built from four runtime agent types on **LangGraph** (orchestration) and **CrewAI** (workers), connected over **A2A**, with tools over **MCP**. It began as a course project graded on 11 requirements (§16); the course is complete and that table is kept as history (D87, D88).
 
 ---
 
@@ -333,12 +333,12 @@ Personas don't share a context, and no agent juggles roles. They share the **sam
 ### 7.2 Runtime agent types
 | Type | Framework | Runs at once | Writes code? | Personas |
 |---|---|---|---|---|
-| **Orchestrator / PM** | ADK `LlmAgent` + deterministic ADK mission runner | 1 | No (writes plan and contract files) | PM / Tech Lead |
+| **Orchestrator / PM** | LangGraph structured model calls + a deterministic mission runner (a LangGraph graph) | 1 | No (writes plan and contract files) | PM / Tech Lead |
 | **Worker** | CrewAI crew served over A2A | **1 at a time** | Yes, in the mission worktree | Data, Backend, Designer, Frontend, DevOps |
-| **Validator** | ADK `LlmAgent` (Reviewer, Security) and CrewAI (QA) | Several in parallel | No (QA may only write test files to a separate tests folder; see §8.5) | Code Reviewer, Security, QA |
-| **Research** | CrewAI or ADK, read-only | Several in parallel | No | Researcher (also started as subagents by any agent) |
+| **Validator** | LangGraph structured model calls (Reviewer, Security) and CrewAI (QA) | Several in parallel | No (QA may only write test files to a separate tests folder; see §8.5) | Code Reviewer, Security, QA |
+| **Research** | LangGraph tool loop (agent ⇄ ToolNode), read-only | Several in parallel | No | Researcher (also started as subagents by any agent) |
 
-The existing **Router** (ADK, Pydantic output plus a deterministic policy) still classifies each chat message (Ask / Change / New mission) and its complexity.
+The existing **Router** (a LangGraph conversation graph node, Pydantic output plus a deterministic policy) still classifies each chat message (Ask / Change / New mission) and its complexity.
 
 ### 7.3 v1 personas (built in)
 | Persona | Type | Job | Default model tier | Built-in skills (v1) | Built-in plugins |
@@ -436,7 +436,7 @@ Notes:
 ### 8.7 Pause, redirect, resume and long runs
 - **Pause** finishes the current step and stops. **Stop** cancels.
 - **Redirect:** the user's instruction goes to the PM, which updates the plan, features and contract. Changes are shown as a diff, and the mission resumes after the user approves.
-- **Runs survive the UI being closed.** The backend is a separate process. All mission state is in Postgres and the mission folder, and ADK sessions are stored in the database. After a restart, the mission resumes from the last checkpoint.
+- **Runs survive the UI being closed.** The backend is a separate process. All mission state is in Postgres and the mission folder (LangGraph graphs run in memory with no checkpointer; Postgres stays the source of truth, D88). After a restart, the mission resumes from the last checkpoint.
 - **Notifications:** a desktop notification on Needs you, a finished milestone, or mission completion.
 
 ### 8.8 Applying, discarding and reverting
@@ -669,7 +669,7 @@ Models differ in how reliably they follow an edit format. Even frontier models p
 ### 10.9 Future: external agents as workers (ACP)
 - **What:** let a persona be backed by an external agent CLI (Claude Code, Codex, Gemini CLI, OpenCode; Antigravity if it offers a headless mode). The CLI uses **its own login**, which is the legitimate way to use a subscription.
 - **How:** an A2A wrapper that speaks **ACP (Agent Client Protocol)** to the CLI over stdio. It gets one worktree per job and the same feature/handoff/validator cycle.
-- **Course constraint:** H.E.X's own agents stay CrewAI and ADK only. External CLIs are optional external workers, **off in the graded demo and evaluation**.
+- **Framework rule:** H.E.X's own agents stay LangGraph and CrewAI only (D88). External CLIs are optional external workers, **off in the graded demo and evaluation**.
 
 ---
 
@@ -756,11 +756,11 @@ class Persona(BaseModel):
 └──────────────────────────────▲──────────────────────────── REST + WebSocket (token) ─────────┘
                                │
 ┌──────────────────────────────┴────────────── FastAPI backend (:8765) ─────────────────────────┐
-│ ADK layer: RouterAgent → policy → Answer | Clarify | Mission                                   │
-│            PM LlmAgent (scoping, plan, contracts) · MissionRunner (deterministic loop)         │
-│            Validators: Reviewer, Security (LlmAgent)                                           │
+│ LangGraph layer: router node → policy → Answer | Clarify | Mission                             │
+│            PM structured calls (scoping, plan, contracts) · MissionRunner (deterministic)      │
+│            Validators: Reviewer, Security (structured model calls)                             │
 │ Registries: Personas · Skills · Plugins · Connections · Model catalog · Assigner               │
-│ ProviderRouter (key pools, fallback, escalation, budgets, cost) ◄─ HexAdkLlm / HexLLM          │
+│ ProviderRouter (key pools, fallback, escalation, budgets, cost) ◄─ HexChatModel / HexLLM       │
 │ Coordination backend: Blackboard | Messaging · Guardrails · TelemetryHub (events, OTel, audit) │
 └──────┬─────────────────────────────┬───────────────────────────┬──────────────────────────────┘
        │ A2A (JSON-RPC, traceparent) │ MCP (stdio)               │
@@ -772,12 +772,12 @@ class Persona(BaseModel):
 └─────────────────────────────┘                               └─────────────────────────────────┘
 ```
 
-### 12.2 Which framework does what (course requirement 7)
+### 12.2 Which framework does what
 | Concern | Framework | Why |
 |---|---|---|
-| Routing, conversation, PM, mission runner, Reviewer and Security validators | **ADK** | Orchestration, Pydantic `output_schema`, callbacks, OpenTelemetry, database sessions |
+| Routing, conversation, PM, mission runner, Reviewer and Security validators, research | **LangGraph** (D88) | `StateGraph` workflows with conditional edges, `ToolNode` tool loops, callbacks; Pydantic output via our structured-output guard; graphs run in memory (no checkpointer), LangSmith off |
 | Worker personas, QA, Research crews | **CrewAI** (served over A2A) | Role-based crews; a real cross-framework, cross-process boundary |
-| Every model call | `ProviderRouter` via `HexAdkLlm` (ADK `BaseLlm`) and `HexLLM` (CrewAI `BaseLLM`) | One place for keys, fallback, cost and logging |
+| Every model call | `ProviderRouter` via `HexChatModel` (LangChain `BaseChatModel`) and `HexLLM` (CrewAI `BaseLLM`) | One place for keys, fallback, cost and logging |
 
 **No LiteLLM:** the existing OpenAI-compatible adapter covers most providers, a native Anthropic adapter is added, and our own router already provides the routing policy. This keeps dependencies and behaviour under our control (§21).
 
@@ -854,7 +854,7 @@ for milestone in plan.milestones:
 | Knowledge (2) | ✅ `load_skill`, `search_standards` (ChromaDB coding standards and verified lessons) |
 
 - **Validation:** every tool has Pydantic argument and result models plus a path guard.
-- **Allow-lists:** per-kind tool lists (validators and research can't write) are enforced in ADK `before_tool_callback`, the CrewAI tool guardrail, and the MCP server.
+- **Allow-lists:** per-kind tool lists (validators and research can't write) are enforced by the tool list each LangGraph agent is given, the CrewAI tool guardrail, and the MCP server.
 - **Tests:** unit tests per tool plus one stdio round trip.
 
 ### 12.7 Sandbox
@@ -870,7 +870,7 @@ for milestone in plan.milestones:
 - **Without Docker,** checks **fail closed**; they never run unsafely on the host.
 
 ### 12.8 Reuse of what's built (nothing is thrown away)
-- **Kept as is:** path guard, worktrees and snapshots, the sandbox runner, the MCP server and bridge, the Blackboard (claims, leases, reaper), the event log with gap-free `seq`, TelemetryHub (ADK + CrewAI callbacks), the A2A server and client with traceparent, the A2A explorer, `ProviderRouter` (retry, fallback, cooldown, `llm_calls`, pricing), `HexAdkLlm` / `HexLLM`, Groq pseudo-tool-call salvage, the context manager, redaction, the Router + policy (the scikit-learn baseline is not built yet, D59, D62), the 14-task benchmark, and the Electron security setup.
+- **Kept as is:** path guard, worktrees and snapshots, the sandbox runner, the MCP server and bridge, the Blackboard (claims, leases, reaper), the event log with gap-free `seq`, TelemetryHub (LangGraph + CrewAI callbacks), the A2A server and client with traceparent, the A2A explorer, `ProviderRouter` (retry, fallback, cooldown, `llm_calls`, pricing), `HexChatModel` / `HexLLM`, Groq pseudo-tool-call salvage, the context manager, redaction, the Router + policy (the scikit-learn baseline is not built yet, D59, D62), the 14-task benchmark, and the Electron security setup.
 - **Moved behind Developer mode:** the Monaco editor, file tree, Observability tabs and diff view.
 
 ---
@@ -892,7 +892,7 @@ for milestone in plan.milestones:
 ### 13.2 Guardrail layers (course requirement 8)
 | Layer | Guardrail | Where |
 |---|---|---|
-| Input | Secret redaction ✅; prompt-injection screening of user messages, file content, web content and skill text (heuristics + an LLM classifier with a Pydantic verdict); untrusted content clearly marked as data | ADK `before_model_callback`, context manager |
+| Input | Secret redaction ✅; prompt-injection screening of user messages, file content, web content and skill text (heuristics + an LLM classifier with a Pydantic verdict); untrusted content clearly marked as data | prompt assembly before each model call, context manager |
 | Plan | User approval of the PRD, validation contract and plan changes; Ask mode can't write ✅; low Router confidence leads to a clarifying question ✅ | Mission state machine, Router policy |
 | Tool | Per-kind tool allow-list; path and argument validation ✅; plugin permissions + approvals; rate limit per mission | `before_tool_callback`, CrewAI tool guardrail, MCP server |
 | Output | Pydantic schemas with one repair retry ✅; CrewAI task guardrails (the handoff must list files; a review must cite file and line); lazy-edit rejection | `after_model_callback`, CrewAI tasks, edit applier |
@@ -902,7 +902,7 @@ for milestone in plan.milestones:
 Every trigger becomes an event, a span attribute and an audit record. Blocking triggers appear in **Needs you**.
 
 ### 13.3 Secrets
-- Keys are kept in the OS keychain (local) or Secret Manager (cloud).
+- Keys are kept in the OS keychain.
 - They never reach the renderer, logs, traces, git or the sandbox.
 - Secrets are redacted from model context and logs; `.env` files in user projects are excluded from context by default.
 
@@ -925,7 +925,7 @@ Every trigger becomes an event, a span attribute and an audit record. Blocking t
 ## 14. Observability
 
 ### 14.1 Telemetry (built, extended)
-- **Sources:** all 8 ADK callback types (agent, model and tool before/after, plus model and tool error), CrewAI step and task callbacks, kickoff hooks and event-bus listeners, plus our own sources (provider router, sandbox, guardrails, Blackboard). They all feed **TelemetryHub**.
+- **Sources:** LangGraph callbacks (graph and node start/end, model start/end/error, tool start/end/error, D88), CrewAI step and task callbacks, kickoff hooks and event-bus listeners, plus our own sources (provider router, sandbox, guardrails, Blackboard). They all feed **TelemetryHub**.
 - **Outputs:**
   1. the ordered **event log** (typed, gap-free `seq`, TS types generated from the backend schema);
   2. **OpenTelemetry spans** (mission → milestone → feature → agent → model / tool / A2A / sandbox / guardrail), propagated across A2A with `traceparent`;
@@ -1009,6 +1009,8 @@ Every trigger becomes an event, a span attribute and an audit record. Blocking t
 
 ## 16. Course requirements coverage
 
+*Historical (D87, D88): the course is complete. This table records how the course build met its requirements; rows that name ADK describe the build before ADK was replaced by LangGraph.*
+
 | # | Requirement | How H.E.X v3 meets it | Status | Phase |
 |---|---|---|---|---|
 | 1 | State sharing: Blackboard vs messaging | Two coordination backends for missions (§9.8), compared in E4 | Blackboard ✅; messaging ✅ (D58); E4 runnable ✅ (D59), no live results yet | P7, P8 |
@@ -1021,7 +1023,7 @@ Every trigger becomes an event, a span attribute and an audit record. Blocking t
 | 8 | Guardrails + prompt variants | Layered guardrails (§13.2); persona instruction and orchestration skill variants with ids on every call (E5) | Partly ✅ | P5–P6 |
 | 9 | Observability: tracing, audit, provenance | OTel spans across A2A, hash-chained audit, feature-level provenance, delegation log, views | Event log ✅ | P7 |
 | 10 | End-to-end evaluation (cost, time, prompt variance) | Runner, benchmarks, E1–E6, dashboard (§15) | 14-task benchmark ✅; mission benchmark, runner, E4/E5, results, safety negatives and dashboard built ✅ (D59); E1–E3, E6 blocked; no live results yet | P8 |
-| 11 | Cloud deployment | **H.E.X backend on Google Cloud** (§18.2, P9); details decided with the user at that phase | Planned | P9 |
+| 11 | Cloud deployment | Removed from scope (D87): H.E.X is a local-first desktop app | Dropped | — |
 | + | Original brief: scikit-learn baseline, ≥40 runs across providers, PEAS metrics | E6, E3, §15.4 | Label tools ✅; the scikit-learn baseline is not built (needs your approval of the dependency and your labels, D62) | P8 |
 
 ---
@@ -1030,11 +1032,11 @@ Every trigger becomes an event, a span attribute and an audit record. Blocking t
 
 **Built M0–M4, P1, P2:**
 - **App:** Electron + React IDE (Monaco, tabs, file tree, Ask/Edit/Auto chat, read-only diff), Postgres, typed event log.
-- **Routing:** Router (ADK LlmAgent + policy) with a scikit-learn baseline; context manager with summaries and redaction.
-- **Agents:** CrewAI Planner and Coder served over **A2A** (separate process, traceparent, bearer auth); ADK orchestration (Sequential + Loop) with an ADK Reviewer.
+- **Routing:** Router (LangGraph conversation graph + policy) with a scikit-learn baseline; context manager with summaries and redaction.
+- **Agents:** CrewAI Planner and Coder served over **A2A** (separate process, traceparent, bearer auth); LangGraph orchestration (run graph + reflection-loop graph) with a structured Reviewer call (D88).
 - **Workspace:** Blackboard with atomic claims and leases; git worktrees; Docker sandbox; 6 MCP tools; ChromaDB coding standards.
 - **Providers:** `ProviderRouter` (Groq → Gemini → Ollama, retry, fallback, cooldown, cost, `llm_calls`) with native tool calling and Groq pseudo-tool-call salvage.
-- **Observability:** TelemetryHub (ADK + CrewAI callbacks) and Observability UI (Blackboard board, agent grid, callback stream, schema checks, pattern topology, A2A explorer).
+- **Observability:** TelemetryHub (LangGraph + CrewAI callbacks) and Observability UI (Blackboard board, agent grid, callback stream, schema checks, pattern topology, A2A explorer).
 - **Evaluation:** 14-task benchmark with hidden tests.
 
 **Built in P3 (Mission core; test-verified, not yet run live with real keys):** personas as data and `build_agent`; the persona crew over A2A; missions from a hand-written plan (D24) with the mission folder; the MissionRunner (serial features, retries, Needs you, checkpoints, pause/stop/resume); apply, revert, keep, discard and restore checkpoint; the WebSocket mission stream and mission events; Mission Control v1.
@@ -1053,7 +1055,7 @@ Every trigger becomes an event, a span attribute and an audit record. Blocking t
 **Pinned versions** (from the version-check spike, 2026-11-01): `google-adk 2.13.0`, `crewai 1.15.28`, `a2a-sdk[http-server]~=0.3.10` (0.3.26 tested; CrewAI's A2A code breaks on 1.x), `mcp 1.28.1`, `opentelemetry-sdk 1.44`. Re-run `spikes/adk_a2a/` after any upgrade.
 
 **Spike findings to remember:**
-- An ADK `LoopAgent` stops only when a step escalates.
+- The reflection loop ends when the reviewer decides or after its round limit (a conditional edge in the LangGraph graph, D88).
 - Every loop iteration sees the full history, so per-round context must be controlled.
 - Trace metadata arrives in request-level `RequestContext.metadata`.
 - On Windows, MCP subprocesses need a Proactor loop (run without `--reload`, or on the dedicated MCP thread).
@@ -1077,19 +1079,9 @@ Every trigger becomes an event, a span attribute and an audit record. Blocking t
 | **P6 Skills & plugins** | User-built engineers | Skill registry (built-in, folder, GitHub); `load_skill`; persona panel with skill and plugin dropdowns; custom personas; plugin manager with permissions + approvals; orchestration-strategy skills; prompt/skill variant registry; input guardrails; privacy modes | 2, 8 | Adding "motion-graphics" to the Designer changes its output in the next mission; a risky plugin is blocked until approved |
 | **P7 Observability & state sharing** | Prove and explain | Messaging backend; OTel export; trace explorer; hash-chained audit + verify; feature-level provenance; metrics dashboard; Needs-you notifications; resume after restart | 1, 5, 9 | The same mission runs on both backends; the audit chain verifies; any changed file traces back to persona, model, skill and approval |
 | **P8 Evaluation** | Measured results | Mission benchmark; runner; E1–E6; report and experiment dashboard (built; E1 with 3 patterns, E4, E5 runnable; E2, E3, E6 blocked; D59-D61) | 10, 1, 4, 8 | Reproducible, dated report browsable in the app |
-| **P9 Cloud** | Requirement 11 | H.E.X backend + A2A crew service on Google Cloud (§18.2) | 11 | The deployed system runs the demo |
 
-### 18.2 Cloud deployment (P9): direction, details to decide with the user then
-- **Backend + ADK orchestrator:** a Cloud Run service. The **CrewAI crew service** is a separate Cloud Run service, keeping the A2A boundary real.
-- **Data:** Cloud SQL for Postgres. ChromaDB on a persistent volume or a managed alternative.
-- **Sandbox:** Cloud Run Jobs (gVisor, no egress).
-- **Secrets:** keys in Secret Manager.
-- **Models:** hosted only; no Ollama in the cloud.
-- **UI:** a web build of the renderer with real authentication. The desktop app stays for local use.
-- **Observability:** OTel → Cloud Trace / Cloud Logging.
-- **Workspaces:** cloned into per-mission storage.
-- **Keep it cloud-ready from P3 onward:** stateless services, config through environment variables, and sandbox and storage behind interfaces.
-- **Ask the user before starting P9.**
+### 18.2 Cloud deployment: removed (D87)
+H.E.X runs on the user's own computer only. There is no cloud deployment, no cloud phase and no cloud scripts.
 
 ### 18.3 Later scope (after the graded version)
 - External agent CLIs as workers via ACP (§10.9).
@@ -1097,7 +1089,7 @@ Every trigger becomes an event, a span attribute and an audit record. Blocking t
 - More stack packs; mobile and desktop app targets.
 - Learning loop → skills (§11.8); a skill and plugin gallery.
 - Several missions at once; scheduled missions; mobile monitoring.
-- A2A 1.0 migration and ADK 2.x graph workflows (§20).
+- A2A 1.0 migration (§20).
 
 ---
 
@@ -1128,11 +1120,9 @@ Every trigger becomes an event, a span attribute and an audit record. Blocking t
 | Weak or cheap models break edit formats | Per-model edit formats, tolerant applier, escalation ladder |
 | Rate limits and quotas across providers | Token buckets, cooldowns, key pools (with ToS caution), cross-provider fallback, budgets |
 | Third-party skills and plugins are malicious or prompt-inject | Permission labels, approvals, sandbox, Rule of Two, untrusted-content marking, pinned skill commits |
-| **ADK 2.x deprecates Sequential/Loop/Parallel agents** in favour of graph workflows | MissionRunner is a custom deterministic agent; evaluate a migration to graph workflows; keep patterns isolated behind one interface |
 | **A2A 1.0 is out; we pin a2a-sdk 0.3** (CrewAI breaks on 1.x) | Stay on 0.3 and document it for graders; migrate when CrewAI supports 1.x; re-run the spikes |
 | OTel GenAI conventions not yet stable | Pin versions; map our events to them |
 | Windows quirks (MCP subprocesses, Docker Desktop) | No `--reload` for agent work, dedicated MCP thread, CI on Windows |
-| Cloud migration is large | Cloud-ready interfaces from P3; decisions taken with the user at P9 |
 | Key leakage | Keychain only, redaction, no keys in the renderer, logs or sandbox; tests for redaction |
 
 ---
@@ -1164,10 +1154,10 @@ Every trigger becomes an event, a span attribute and an audit record. Blocking t
 | D19 ⟲ | **Phaser game map dropped** | Original brief centrepiece; then optional | Not useful for non-coders; observability views cover it |
 | D20 ⟲ | **Memory = verified lessons only; skills preferred; measure on/off** | General ChromaDB self-logs | Research: general memory rarely beats none; agent-chosen context can hurt |
 | D21 ⟲ | **Experiment matrix as targeted experiments E1–E6** | Providers × patterns × backends × variants grid | Combinatorial cost on rate-limited providers |
-| D22 | **Cloud = H.E.X backend on Google Cloud (P9)**, details decided then | — | User decision |
+| D22 ⟲ | **Cloud = H.E.X backend on Google Cloud (P9)**, details decided then (superseded by D87: cloud removed) | — | User decision |
 | D23 ⟲ | **One planning document (this PRD)** | Plan v1, plan v2, brief, report | Documentation sprawl |
 | D24 | **P3 missions take a hand-written plan** (`POST /api/missions` with milestones and features as JSON); the PM scoping chat and plan approval stay in P5 | A minimal PM call generating the plan in P3 | Keeps P3 deterministic and testable; nothing generated from an idea until P5 (decided 2026-11-19) |
-| D25 | **MissionRunner is a deterministic custom ADK `BaseAgent`** (the pattern `orchestration/run.py` already uses), not Sequential/Loop agents or ADK 2.x graph workflows. Resolves Q4 | Spike ADK 2.x graph workflows first | Reuses tested code; `SequentialAgent` and `LoopAgent` are already deprecated in favour of `Workflow`, so the runner avoids both. Revisit in a later spike (decided 2026-11-19) |
+| D25 ⟲ | (superseded by D88: the MissionRunner is now a LangGraph graph) **MissionRunner is a deterministic custom ADK `BaseAgent`** (the pattern `orchestration/run.py` already uses), not Sequential/Loop agents or ADK 2.x graph workflows. Resolves Q4 | Spike ADK 2.x graph workflows first | Reuses tested code; `SequentialAgent` and `LoopAgent` are already deprecated in favour of `Workflow`, so the runner avoids both. Revisit in a later spike (decided 2026-11-19) |
 | D26 | **`.hex/` is applied into the user's project by default, with a Settings toggle.** Resolves Q5 | Never apply `.hex/` | The project keeps its own docs and run contract (decided 2026-11-19) |
 | D27 | **A mission owns one `runs` row; features are their own table** (`missions`, `milestones`, `features`, `handoffs`, `checkpoints`, `needs`), not `tasks` extended. Feature preconditions are free text shown to the agent; execution order is plan order | `tasks` extended with mission columns (§12.5 alternative) | Reuses the per-run gap-free event log, telemetry and `llm_calls` unchanged; keeps the P2 Blackboard `tasks` untouched while `RunWorkflow` still uses it (decided 2026-11-19) |
 | D28 | **P3 escalation ladder is retry, retry, Needs you.** The escalation-model rung (§8.6 step 2) waits for P4 model assignment and the PM re-plan rung (step 3) for P5; until then attempts 2 and 3 use the persona's current model with the exact findings. Quick checks use the existing `.hexmind/profile.yaml` `test` check; the `.hex/project.json` run contract arrives in P5. Milestone status is `completed` (features done), not `passed`, because validators arrive in P5 | The full four-rung ladder and run contract in P3 | Those rungs need features that do not exist yet; faking them would claim behaviour the system does not have (decided 2026-11-19) |
@@ -1229,6 +1219,8 @@ Every trigger becomes an event, a span attribute and an audit record. Blocking t
 | D84 | **Hand a built project to the user (2026-11-22).** Research: `research_notes/Live agent progress UX.md`. On the user's click only, H.E.X (a) adds what a normal repository has and the agents do not always write: `.env.example` (names read from the code, no values), a GitHub Actions workflow built from the run contract's commands (Python or Node), Dependabot, `.streamlit/config.toml`, `.gitignore` entries for secrets and installs, README Developing and Deploy sections; never overwrites a file, one commit; (b) publishes with `gh repo create --source --push` using the user's own `gh auth login`, so H.E.X never sees a GitHub token. Publishing is refused when a tracked file looks like a secrets file or holds a provider key, when a file is over GitHub's 100 MB limit, when an `origin` remote exists, or when `gh` is missing or signed out (each with the plain fix); the repository is private by default and a public one needs the same explicit confirmation. Wording stays honest: the sandbox ran the commands, GitHub has not run CI yet. Deploy targets by stack are advice in the README and panel (Streamlit Community Cloud; Netlify, Vercel or Cloudflare Pages; Render or Cloud Run), not buttons: calling host APIs belongs to P9 | Pushing without asking; storing a GitHub token; deploy buttons now | Asked by the user (2026-11-22) |
 | D85 | **Routing labels written by Claude (2026-11-22).** `docs/routing-labels.md` required labels from people, because a model labeling its own routing test would grade itself. The project owner asked for the labels to be written and labeled by Claude instead. 150 prompts (a developer's phrasing about to-do style apps; 40 question, 45 code_edit, 35 new_workflow, 30 clarification; 55 low, 56 medium, 39 high) were written to `data/labels-claude.csv` and imported as labeler `claude` (118 train, 32 test by the text-hash split). They follow the file's definitions, and ties go to the higher complexity as it says. Because no person labeled them, E6 results are reported as agreement with a model's labels, and the owner can add a human check by labeling at least 30 prompts under their own name and running `agreement claude <name>`. The scikit-learn baseline is still not built: it needs the owner's approval of the dependency (D62) | Public LLM-labeled datasets (other label schemes); the owner labeling all 150 | Asked by the user (2026-11-22) |
 | D86 | **Final draft for the presentation: everything unbuilt moves to future scope (2026-11-22).** The owner closed the scope: no new features before the presentation. The README now has a "Status and future scope" section listing what is not built (cloud P9, publishing apps to a URL, live preview and image input, browser tests, built-in database and sign-in, plan approval and milestone undo, one run view for observability, bundled backend and signed installers, automatic Git setup and a direct-folder mode, the scikit-learn baseline and E2, E3, E6) with the reason and the research behind each; the same items are the deferred list in CLAUDE.md. Known limits are stated there too: the installer holds the desktop app only, only the macOS installer was tried, builds are unsigned, and the E6 labels were written by the assistant (D85) | Building more before the presentation | Asked by the user (2026-11-22) |
+| D87 | **Cloud deployment removed from scope (2026-11-27).** The course this project was built for is complete, and the owner removed the cloud entirely: H.E.X is a local-first desktop app. Phase P9, §18.2's Google Cloud design and requirement 11 are dropped; an Azure VM deployment tried on 2026-11-25 was never committed and its scripts were deleted. The course-era requirement table (§16) and rules are kept only as history | Keep P9 as planned future work | Asked by the owner (2026-11-27) |
+| D88 | **Google ADK replaced by LangGraph (2026-11-27).** With the course complete, the owner asked for the orchestration framework to change from Google ADK to LangGraph, using LangGraph features only, with everything else unchanged. The run workflow (prepare → plan → execute → finalize), the per-task reflection loop (coder → review gate → decide, ended by a conditional edge or the round limit), the chat conversation (context → router → answer | clarify | run), the mission runner and the research tool loop (agent ⇄ `ToolNode`) are LangGraph `StateGraph`s. Single structured calls (PM scoping, validators, research questions) run as one-node graphs so each still shows as one agent. Every model call goes through `ProviderRouter` via `HexChatModel` (a LangChain `BaseChatModel`, no LangChain provider integrations); the structured-output guard (valid → one repair → fallback) is kept. TelemetryHub receives LangGraph callbacks (node_start/node_end, model_start/end/error, tool_start/end/error) and opens OpenTelemetry spans named as before (`invoke_agent`, `call_llm`, `execute_tool`) so the Traces view is unchanged; events are schema v9 with framework "langgraph" ("adk" stays readable for old runs). Graphs run in memory with no checkpointer (Postgres stays the source of truth); LangSmith tracing is off. CrewAI, A2A (the client now uses the a2a-sdk client directly), MCP, the sandbox, the database and the UI are unchanged; `google-adk` and `spikes/adk_a2a/` are removed | Keep ADK; LangChain agents (`create_agent`); a LangGraph Postgres checkpointer | Asked by the owner (2026-11-27) |
 
 **Carried over (still valid):**
 - Every model call goes through `ProviderRouter`.
@@ -1245,7 +1237,7 @@ Every trigger becomes an event, a span attribute and an audit record. Blocking t
 
 | # | Question | Needed by |
 |---|---|---|
-| Q1 | Cloud deployment details (region, auth, cost limits, which services) | Start of P9 |
+| Q1 | ~~Cloud deployment details~~ Resolved: D87, cloud removed from scope | — |
 | Q2 | Which built-in skills to write vs import (for example a specific security-audit or UI/UX skill repo), and their licences | P6 |
 | Q3 | First external agent to support via ACP (OpenCode, Claude Code, Gemini CLI) once grading is done | After P8 |
 | Q4 | ~~ADK workflow agents or 2.x graph workflows for the MissionRunner~~ Resolved: D25 | — |
@@ -1260,7 +1252,7 @@ H.E.X Mind is **Shrey Tiwari's project**; he owns every component and decision.
 
 ### 23.2 Working rules (for Claude Code and any contributor)
 1. Read this PRD and inspect the repo before changing anything. Work **one phase at a time** (§18.1). Each phase ends in a working vertical slice.
-2. Spike unfamiliar framework APIs before building on them. Re-run `spikes/adk_a2a/` after upgrading ADK, CrewAI or a2a-sdk.
+2. Spike unfamiliar framework APIs before building on them; re-run the LangGraph, A2A and telemetry tests after upgrading LangGraph, CrewAI or a2a-sdk.
 3. Run all relevant tests, type checks and builds. **Report only verified results**, including failures.
 4. Never run two pytest sessions at once.
 5. Ask before adding significant dependencies or changing a decision in §21. Record changes in §21.

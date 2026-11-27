@@ -4,8 +4,13 @@ import { deriveTopology, type TopologyNode } from './derive'
 import { FrameworkBadge } from './FrameworkBadge'
 
 const PATTERN: Record<string, string> = {
+  graph: 'LangGraph graph',
+  step: 'Deterministic node',
+  tool_loop: 'Agent ⇄ tools',
+  tools: 'Tool node',
   sequential: 'Sequential',
   loop: 'Loop · reflection',
+  loop_graph: 'Loop graph · reflection',
   parallel: 'Parallel',
   llm: 'LLM agent',
   custom: 'Deterministic step',
@@ -24,7 +29,7 @@ export function PatternTopology({ events }: { events: AgentEvent[] }) {
   return (
     <div className="obs-topology">
       <p className="obs-note">
-        Google ADK orchestrates (<FrameworkBadge framework="adk" />); CrewAI crews do the planning and coding (
+        LangGraph orchestrates (<FrameworkBadge framework="langgraph" />); CrewAI crews do the planning and coding (
         <FrameworkBadge framework="crewai" />), reached over A2A. Highlighted nodes are running now.
       </p>
       <ul className="topology" role="tree" aria-label="Agent topology">

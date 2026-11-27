@@ -1,7 +1,7 @@
 """Advanced research (PRD D62): researchers look things up before the PM plans.
 
 Only when the user turned the switch on. The PM names up to MAX_QUESTIONS things worth looking up;
-each goes to a Researcher (a Google ADK agent on the researcher persona's own model route) that has
+each goes to a Researcher (a LangGraph agent on the researcher persona's own model route) that has
 two tools, `web_search` (Tavily) and `web_fetch` (the page reader of `research.web`), and nothing
 else: it cannot touch files or the sandbox. Each question runs one after another, under hard limits
 (searches, pages, tool calls), and every model call, search and page is a recorded event of the
@@ -18,19 +18,25 @@ import json
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
 import httpx
 from fastapi.concurrency import run_in_threadpool
-from google.adk.agents import LlmAgent
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.tools import StructuredTool
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.prebuilt import ToolNode, tools_condition
 from pydantic import BaseModel, Field, ValidationError, field_validator
+from typing_extensions import TypedDict
 
-from app.agents.adk_llm import HexAdkLlm
+from app.agents.chat_model import HexChatModel
 from app.agents.persona import Persona, get_persona
 from app.agents.variants import Variant, apply
 from app.events.log import EventType, append_event
 from app.guardrails.injection import mark
-from app.orchestration.adk import extract_json, run_adk, schema_guard
+from app.orchestration.graph import extract_json, run_agent, run_graph, structured_call
 from app.orchestration.services import Services
 from app.providers.assignments import route_for
 from app.providers.router import CallContext
@@ -205,7 +211,37 @@ def _tools(work: _Work) -> list[Any]:
             "\n\n[page cut]" if cut else ""
         )
 
-    return [web_search, web_fetch]
+    return [StructuredTool.from_function(coroutine=f) for f in (web_search, web_fetch)]
+
+
+class _ResearchState(TypedDict):
+    messages: Annotated[list[Any], add_messages]
+
+
+def _researcher_graph(llm: HexChatModel, tools: list[StructuredTool]) -> CompiledStateGraph:
+    """The researcher: a model node that may call web_search / web_fetch, and a ToolNode that
+    runs them, looping until the model answers without a tool call. The tools enforce the
+    limits; going past them raises ResearchStopped, which ends the graph."""
+    model = llm.bind_tools(tools)
+
+    async def agent(state: _ResearchState) -> dict[str, Any]:
+        return {"messages": [await model.ainvoke(state["messages"])]}
+
+    graph = StateGraph(_ResearchState)
+    graph.add_node("agent", agent, metadata={"hex_kind": "llm"})
+    graph.add_node("tools", ToolNode(tools), metadata={"hex_kind": "tools"})
+    graph.add_edge(START, "agent")
+    graph.add_conditional_edges("agent", tools_condition, {"tools": "tools", END: END})
+    graph.add_edge("tools", "agent")
+    return graph.compile(name=RESEARCHER)
+
+
+def _final_text(messages: list[Any]) -> str:
+    for message in reversed(messages):
+        if isinstance(message, AIMessage) and not message.tool_calls:
+            text = message.text if isinstance(message.text, str) else str(message.content)
+            return text.strip()
+    return ""
 
 
 # ---------- the PM's questions ----------
@@ -222,7 +258,7 @@ async def ask_questions(
     """The PM names what is worth looking up. An empty list is a valid answer."""
     async with services.sessionmaker() as session:
         route = await route_for(session, PM)
-    llm = HexAdkLlm(
+    llm = HexChatModel(
         router=services.providers,
         ctx=CallContext(
             run_id=run_id,
@@ -248,24 +284,25 @@ really works, what similar products do. Only questions the web can answer; never
 the user. If nothing needs looking up, return an empty list.
 
 Answer with one JSON object only: {{"questions": ["...", "..."]}}"""
-    agent = LlmAgent(
-        name="pm_research_questions",
-        description="The PM choosing what to research.",
-        model=llm,
-        instruction=lambda ctx: prompt,
-        include_contents="none",
-        output_schema=ResearchQuestions,
-        output_key="questions",
-        after_model_callback=schema_guard(
-            ResearchQuestions, llm, key="questions", fallback=_no_questions
-        ),
-    )
     hub = TelemetryHub(services, run_id)
     try:
-        state, _ = await run_adk(hub.instrument(agent, parent="research"), message="Choose")
+        result = await run_agent(
+            "pm_research_questions",
+            lambda: structured_call(
+                llm,
+                ResearchQuestions,
+                prompt,
+                agent="pm_research_questions",
+                fallback=_no_questions,
+                telemetry=hub,
+                user_message="Choose",
+            ),
+            telemetry=hub,
+            parent="research",
+        )
     except Exception:  # a provider outage here only means no research, never a failed session
         return []
-    return ResearchQuestions.model_validate(state["questions"]).questions
+    return result.value.questions
 
 
 # ---------- one researcher ----------
@@ -366,7 +403,7 @@ async def research_one(
     persona = apply(get_persona(RESEARCHER), variant)
     async with services.sessionmaker() as session:
         route = await route_for(session, RESEARCHER)
-    llm = HexAdkLlm(
+    llm = HexChatModel(
         router=services.providers,
         ctx=CallContext(
             run_id=run_id,
@@ -403,15 +440,7 @@ When done, answer with one JSON object only:
 "claims": [{{"claim": "one fact the plan can rely on", "url": "https://...",
 "quote": "exact words"}}],
 "gaps": "what you could not find, or empty"}}"""
-    agent = LlmAgent(
-        name=RESEARCHER,
-        description="Looks one question up on the web.",
-        model=llm,
-        instruction=lambda ctx: prompt,
-        include_contents="none",
-        tools=_tools(work),
-        output_key="note",
-    )
+    graph = _researcher_graph(llm, _tools(work))
     hub = TelemetryHub(services, run_id)
     finding: dict[str, Any] = {
         "question": question,
@@ -425,13 +454,18 @@ When done, answer with one JSON object only:
         "error": None,
     }
     try:
-        state, _ = await run_adk(
-            hub.instrument(agent, parent="research"), message="Research the question"
+        state = await run_graph(
+            graph,
+            {"messages": [SystemMessage(prompt), HumanMessage("Research the question")]},
+            telemetry=hub,
+            parent="research",
+            kind="tool_loop",
+            recursion_limit=4 * MAX_TOOL_CALLS + 4,
         )
     except Exception as exc:  # whatever went wrong, the session goes on without this finding
         finding["error"] = f"the researcher could not finish ({type(exc).__name__})"
     else:
-        text = str(state.get("note") or "").strip()
+        text = _final_text(state["messages"])
         if not text:
             finding["error"] = "the researcher gave no answer"
         else:

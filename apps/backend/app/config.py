@@ -1,11 +1,17 @@
 import os
-from functools import lru_cache
-from ipaddress import ip_address
-from pathlib import Path
-from typing import Literal
 
-from pydantic import AliasChoices, Field, SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+# LangChain (used by LangGraph) can send traces to LangSmith. Nothing leaves this machine, so
+# tracing is off unless someone sets these on purpose. Set before any LangChain import.
+os.environ.setdefault("LANGSMITH_TRACING", "false")
+os.environ.setdefault("LANGCHAIN_TRACING_V2", "false")
+
+from functools import lru_cache  # noqa: E402
+from ipaddress import ip_address  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import Literal  # noqa: E402
+
+from pydantic import AliasChoices, Field, SecretStr, field_validator  # noqa: E402
+from pydantic_settings import BaseSettings, SettingsConfigDict  # noqa: E402
 
 # apps/backend/app/config.py -> repository root
 ROOT_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"

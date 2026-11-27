@@ -1,7 +1,8 @@
 """The PM scoping chat (PRD F2, §8.2 M0): idea → a few focused questions → a plan the user
 reviews, edits and turns into a mission.
 
-Each PM turn is one ADK LlmAgent call (purpose "planner", the PM persona's route) through the
+Each PM turn is one model call (purpose "planner", the PM persona's route), run as a LangGraph
+node, through the
 ProviderRouter, with a Pydantic output schema: the reply to show and, once the PM has enough,
 the plan (`MissionPlan`, the same model hand-written plans use) plus a plain-language PRD. The
 schema guard asks once for a repair of an invalid answer; a PM that still gives no valid answer
@@ -19,13 +20,12 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.concurrency import run_in_threadpool
-from google.adk.agents import LlmAgent
 from pydantic import BaseModel, Field, ValidationError, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents import variants
-from app.agents.adk_llm import HexAdkLlm
+from app.agents.chat_model import HexChatModel
 from app.agents.persona import Persona, all_personas, get_persona
 from app.agents.variants import Variant, apply
 from app.config import Settings
@@ -34,7 +34,7 @@ from app.events.log import EventType, append_event
 from app.guardrails.injection import mark
 from app.missions import service
 from app.missions.models import MissionPlan
-from app.orchestration.adk import model_error_fallback, run_adk, schema_guard
+from app.orchestration.graph import run_agent, structured_call
 from app.orchestration.services import Services
 from app.providers.assignments import route_for
 from app.providers.router import CallContext
@@ -300,7 +300,7 @@ async def pm_turn(
     provider, or no valid answer after one repair)."""
     async with services.sessionmaker() as session:
         route = await route_for(session, PM)
-    llm = HexAdkLlm(
+    llm = HexChatModel(
         router=services.providers,
         ctx=CallContext(
             run_id=run_id,
@@ -323,24 +323,24 @@ async def pm_turn(
         pm,
         research.notes_for_pm(research_notes),
     )
-    agent = LlmAgent(
-        name="pm_scoping",
-        description="The PM scoping a new mission with the user.",
-        model=llm,
-        instruction=lambda ctx: prompt,
-        include_contents="none",
-        output_schema=PmTurn,
-        output_key="turn",
-        after_model_callback=schema_guard(PmTurn, llm, key="turn", fallback=_fallback),
-        on_model_error_callback=model_error_fallback(PmTurn, key="turn", fallback=_fallback),
-    )
     hub = TelemetryHub(services, run_id)
-    state, _ = await run_adk(hub.instrument(agent, parent="scoping"), message="Scope the mission")
-    turn = PmTurn.model_validate(state["turn"])
-    if state.get("turn_schema_status") == "fallback":
-        errors = state.get("turn_schema_errors") or []
-        return turn, "; ".join(str(e) for e in errors)[:1000] or "no valid answer"
-    return turn, None
+    result = await run_agent(
+        "pm_scoping",
+        lambda: structured_call(
+            llm,
+            PmTurn,
+            prompt,
+            agent="pm_scoping",
+            fallback=_fallback,
+            telemetry=hub,
+            user_message="Scope the mission",
+        ),
+        telemetry=hub,
+        parent="scoping",
+    )
+    if result.status == "fallback":
+        return result.value, "; ".join(str(e) for e in result.errors)[:1000] or "no valid answer"
+    return result.value, None
 
 
 # ---------- the session ----------

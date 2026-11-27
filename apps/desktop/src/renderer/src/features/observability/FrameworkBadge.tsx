@@ -1,8 +1,9 @@
 import type { Framework } from './derive'
 
-const LABELS: Record<Framework, string> = { adk: 'ADK', crewai: 'CrewAI' }
+const LABELS: Record<Framework, string> = { adk: 'ADK', langgraph: 'LangGraph', crewai: 'CrewAI' }
 const TITLES: Record<Framework, string> = {
-  adk: 'Google Agent Development Kit agent',
+  adk: 'Google ADK agent (recorded before the move to LangGraph)',
+  langgraph: 'LangGraph graph or node',
   crewai: 'CrewAI crew'
 }
 

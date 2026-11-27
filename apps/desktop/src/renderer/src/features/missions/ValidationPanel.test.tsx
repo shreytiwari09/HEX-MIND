@@ -7,7 +7,7 @@ import { describeEvent } from '../runs/events'
 import { ValidationPanel } from './ValidationPanel'
 import type { ValidatorReportView } from './types'
 
-const base = { schema_version: 8 as const, event_id: 'e', run_id: 'r1', ts: '', agent_id: null, task_id: null }
+const base = { schema_version: 9 as const, event_id: 'e', run_id: 'r1', ts: '', agent_id: null, task_id: null }
 
 const REPORTS: ValidatorReportView[] = [
   {

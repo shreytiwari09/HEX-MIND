@@ -1,13 +1,14 @@
-"""Run orchestration on Google ADK: SequentialAgent[prepare -> plan -> execute -> finalize].
+"""Run orchestration on LangGraph: a sequential graph prepare -> plan -> execute -> finalize.
 
 - prepare:  snapshot the user's workspace, create an isolated git worktree, start the MCP
             workspace server bound to it.
 - plan:     the CrewAI Planner crew (called over A2A) breaks the request into Blackboard
             tasks (medium/high complexity); low complexity gets a single task.
 - execute:  a pool of workers claims tasks atomically. Each claimed task runs a reflection
-            loop, an ADK LoopAgent[coder -> review_gate -> decide]: the CrewAI Coder crew
-            (over A2A) edits, the sandbox check runs, the ADK Reviewer (Pydantic ReviewResult)
-            judges, and `decide` applies the acceptance rules and escalates to end the loop.
+            loop, a LangGraph graph coder -> review_gate -> decide with an edge back to coder:
+            the CrewAI Coder crew (over A2A) edits, the sandbox check runs, the Reviewer model
+            (Pydantic ReviewResult) judges, and `decide` applies the acceptance rules; the loop
+            ends on a decision or after `rounds` rounds.
 - finalize: diff the worktree against the snapshot, record file_changes, emit diff_ready, and
             wait for the user's approval. Nothing touches the user's files here.
 
@@ -19,36 +20,29 @@ import asyncio
 import json
 import logging
 import uuid
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from fastapi.concurrency import run_in_threadpool
-from google.adk.agents import BaseAgent, LlmAgent, LoopAgent, SequentialAgent
-from google.adk.agents.invocation_context import InvocationContext
-from google.adk.events import Event
-from pydantic import PrivateAttr
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 from sqlalchemy import select
+from typing_extensions import TypedDict
 
 from app.a2a.client import call_crew
 from app.a2a.protocol import CrewRequest, CrewRole
 from app.agents import roles
-from app.agents.adk_llm import HexAdkLlm
+from app.agents.chat_model import HexChatModel
 from app.agents.mcp_bridge import McpWorkspace
 from app.blackboard import store
 from app.context.workspace_scan import list_files, mentioned_files
 from app.db.models import CheckResult, FileChange, Message, Project, Review, Run, Task
 from app.events.log import EventType, append_event
 from app.memory.store import safely
-from app.orchestration.adk import (
-    escalate_event,
-    model_error_fallback,
-    run_adk,
-    schema_guard,
-    state_event,
-)
+from app.orchestration.graph import run_graph, structured_call
 from app.orchestration.services import Services
 from app.providers.router import CallContext
 from app.sandbox.runner import (
@@ -135,7 +129,7 @@ class RunWorkflow:
         parent: str,
         task_id: uuid.UUID | None = None,
     ) -> str:
-        """Run a CrewAI crew over A2A (ADK RemoteA2aAgent -> crew service)."""
+        """Run a CrewAI crew over A2A (a2a-sdk client -> crew service)."""
         assert self.worktree is not None and self.workspace_root is not None
         assert self.services.a2a_http is not None, "no A2A client configured"
         return await call_crew(
@@ -358,12 +352,7 @@ class RunWorkflow:
             standards=await self._memory("standards_for", query, k=3),
             lessons=await self._memory("self_logs_for", query, k=2, exclude_run=str(self.run_id)),
         )
-        await run_adk(
-            self.telemetry.instrument(
-                reflection_loop(self, loop_state), task_id=task.id, parent="execute"
-            ),
-            message=f"Implement task: {task.title}",
-        )
+        await run_task_loop(self, loop_state)
         if not loop_state.finished:  # defensive: the loop must always end with a decision
             await self._finish_task(
                 task.id, "failed", error="reflection loop ended without a decision"
@@ -537,7 +526,7 @@ class RunWorkflow:
             await run_in_threadpool(git.remove_worktree, self.workspace_root, self.worktree)
 
 
-# ---------- ADK agents ----------
+# ---------- reflection-loop state ----------
 
 
 @dataclass
@@ -567,275 +556,238 @@ def _review_fallback(errors: list[str]) -> roles.ReviewResult:
     )
 
 
-class RunStep(BaseAgent):
-    """A deterministic run step (custom ADK agent) wrapping one RunWorkflow method."""
-
-    _fn: Callable[[], Awaitable[None]] = PrivateAttr()
-
-    def __init__(self, name: str, description: str, fn: Callable[[], Awaitable[None]]) -> None:
-        super().__init__(name=name, description=description)
-        self._fn = fn
-
-    async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
-        await self._fn()
-        yield state_event(self, ctx, **{f"{self.name}_done": True})
+# ---------- LangGraph nodes ----------
 
 
-class CoderStep(BaseAgent):
+class _NoState(TypedDict, total=False):
+    """The graphs keep their working state in RunWorkflow / TaskLoopState; Postgres is the
+    source of truth."""
+
+
+async def coder_step(wf: "RunWorkflow", st: TaskLoopState) -> None:
     """CrewAI Coder edits files through the MCP tools; then the sandbox check runs."""
+    st.round += 1
+    st.check, st.review = None, None
+    before = await wf._worktree_fingerprint()
+    st.summary = await wf._crew(
+        "coder",
+        roles.coder_prompt(
+            title=st.task.title,
+            description=st.task.description,
+            criteria=st.task.acceptance_criteria,
+            target_files=st.task.target_files,
+            standards=st.standards,
+            lessons=st.lessons,
+            feedback=st.feedback,
+        ),
+        "A short summary of the changes and the final check result",
+        agent_id=st.worker,
+        parent="coder",
+        task_id=st.task.id,
+    )
+    # Agents' claims are not evidence: a round that changed no files did nothing,
+    # whatever its final answer says.
+    if await wf._worktree_fingerprint() == before:
+        st.outcome, st.feedback = "no_change", NO_CHANGES_FEEDBACK
+    else:
+        st.outcome = "checked"
+        st.check = await wf._run_check(st.task.id)
 
-    _workflow: "RunWorkflow" = PrivateAttr()
-    _state: TaskLoopState = PrivateAttr()
 
-    def __init__(self, workflow: "RunWorkflow", state: TaskLoopState) -> None:
-        super().__init__(
-            name="coder",
-            description="CrewAI Coder: edits files via MCP tools, then the sandbox check runs.",
-        )
-        self._workflow, self._state = workflow, state
-
-    async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
-        wf, st = self._workflow, self._state
-        st.round += 1
-        st.check, st.review = None, None
-        before = await wf._worktree_fingerprint()
-        st.summary = await wf._crew(
-            "coder",
-            roles.coder_prompt(
-                title=st.task.title,
-                description=st.task.description,
-                criteria=st.task.acceptance_criteria,
-                target_files=st.task.target_files,
-                standards=st.standards,
-                lessons=st.lessons,
-                feedback=st.feedback,
-            ),
-            "A short summary of the changes and the final check result",
-            agent_id=st.worker,
-            parent="coder",
+async def review_gate_step(wf: "RunWorkflow", st: TaskLoopState) -> None:
+    """Runs the Reviewer when the round produced checked changes and review is required."""
+    if st.outcome != "checked" or not wf.requires_review:
+        return
+    assert st.check is not None
+    async with wf.services.sessionmaker.begin() as session:
+        await store.transition(session, st.task.id, "review")
+    await wf.emit(
+        EventType.REVIEW_STARTED, task_id=st.task.id, agent_id="reviewer", reviewer="reviewer"
+    )
+    st.review_prompt = await wf._review_prompt(st.task, st.check)
+    st.review_unavailable = None
+    model = HexChatModel(
+        router=wf.services.providers,
+        ctx=CallContext(
+            run_id=wf.run_id,
             task_id=st.task.id,
+            agent_id="reviewer",
+            complexity=wf.complexity,
+        ),
+        purpose="reviewer",
+        max_tokens=2048,
+    )
+    # A provider outage is not a verdict: retry the review after a pause (rate limits
+    # and cooldowns clear within a minute) instead of blocking working code.
+    delays = [0.0, *wf.services.settings.review_retry_delays_s]
+    for attempt, delay in enumerate(delays):
+        if delay:
+            await asyncio.sleep(delay)
+        result = await structured_call(
+            model,
+            roles.ReviewResult,
+            st.review_prompt,
+            agent="reviewer",
+            fallback=_review_fallback,
+            telemetry=wf.telemetry,
+            task_id=st.task.id,
+            user_message=f"Implement task: {st.task.title}",
         )
-        # Agents' claims are not evidence: a round that changed no files did nothing,
-        # whatever its final answer says.
-        if await wf._worktree_fingerprint() == before:
-            st.outcome, st.feedback = "no_change", NO_CHANGES_FEEDBACK
-        else:
-            st.outcome = "checked"
-            st.check = await wf._run_check(st.task.id)
-        yield state_event(
-            self,
-            ctx,
-            round=st.round,
-            outcome=st.outcome,
-            check_accepted=bool(st.check and _accepted(st.check)),
+        outage = result.status == "fallback" and any(
+            str(e).startswith("provider error") for e in result.errors
         )
-
-
-class ReviewGate(BaseAgent):
-    """Runs the ADK Reviewer when the round produced checked changes and review is required."""
-
-    _workflow: "RunWorkflow" = PrivateAttr()
-    _state: TaskLoopState = PrivateAttr()
-
-    def __init__(self, workflow: "RunWorkflow", state: TaskLoopState) -> None:
-        llm = HexAdkLlm(
-            router=workflow.services.providers,
-            ctx=CallContext(
-                run_id=workflow.run_id,
-                task_id=state.task.id,
-                agent_id="reviewer",
-                complexity=workflow.complexity,
-            ),
-            purpose="reviewer",
-            max_tokens=2048,
+        if not outage:
+            break
+        logger.warning(
+            "review of task %s: providers unavailable (attempt %d/%d)",
+            st.task.id,
+            attempt + 1,
+            len(delays),
         )
-        reviewer = LlmAgent(
-            name="reviewer",
-            description="ADK Reviewer: judges the change against the acceptance criteria.",
-            model=llm,
-            instruction=lambda ctx: state.review_prompt,
-            include_contents="none",
-            output_schema=roles.ReviewResult,
-            output_key="review",
-            after_model_callback=schema_guard(
-                roles.ReviewResult, llm, key="review", fallback=_review_fallback
-            ),
-            on_model_error_callback=model_error_fallback(
-                roles.ReviewResult, key="review", fallback=_review_fallback
-            ),
-        )
-        super().__init__(
-            name="review_gate",
-            description="Reviews checked changes when the strategy requires review.",
-            sub_agents=[reviewer],
-        )
-        self._workflow, self._state = workflow, state
-
-    async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
-        wf, st = self._workflow, self._state
-        if st.outcome != "checked" or not wf.requires_review:
-            yield state_event(self, ctx, review_skipped=True)
-            return
-        assert st.check is not None
-        async with wf.services.sessionmaker.begin() as session:
-            await store.transition(session, st.task.id, "review")
-        await wf.emit(
-            EventType.REVIEW_STARTED, task_id=st.task.id, agent_id="reviewer", reviewer="reviewer"
-        )
-        st.review_prompt = await wf._review_prompt(st.task, st.check)
-        st.review_unavailable = None
-        # A provider outage is not a verdict: retry the review after a pause (rate limits
-        # and cooldowns clear within a minute) instead of blocking working code.
-        delays = [0.0, *wf.services.settings.review_retry_delays_s]
-        for attempt, delay in enumerate(delays):
-            if delay:
-                await asyncio.sleep(delay)
-            async for event in self.sub_agents[0].run_async(ctx):
-                yield event
-            errors = ctx.session.state.get("review_schema_errors") or []
-            outage = ctx.session.state.get("review_schema_status") == "fallback" and any(
-                str(e).startswith("provider error") for e in errors
-            )
-            if not outage:
-                break
-            logger.warning(
-                "review of task %s: providers unavailable (attempt %d/%d)",
-                st.task.id,
-                attempt + 1,
-                len(delays),
-            )
-        else:
-            st.review, st.review_unavailable = None, str(errors[0])[:300]
-            return
-        st.review = roles.ReviewResult.model_validate(ctx.session.state["review"])
-        await wf._record_review(st.task, st.review)
+    else:
+        st.review, st.review_unavailable = None, str(result.errors[0])[:300]
+        return
+    st.review = result.value
+    await wf._record_review(st.task, st.review)
 
 
-class DecideStep(BaseAgent):
-    """Applies the acceptance rules; escalates to end the loop once the task is decided."""
+async def _finish(wf: "RunWorkflow", st: TaskLoopState, status: str, **detail: str) -> None:
+    await wf._finish_task(st.task.id, status, **detail)
+    log_outcome = status if status in ("completed", "blocked") else "not_accepted"
+    await wf._self_log(st.task, log_outcome, st.feedback or st.summary, st.check)
+    st.finished = True
 
-    _workflow: "RunWorkflow" = PrivateAttr()
-    _state: TaskLoopState = PrivateAttr()
 
-    def __init__(self, workflow: "RunWorkflow", state: TaskLoopState) -> None:
-        super().__init__(
-            name="decide",
-            description="Accepts, retries or stops the task from real check and review results.",
-        )
-        self._workflow, self._state = workflow, state
+async def decide_step(wf: "RunWorkflow", st: TaskLoopState) -> None:
+    """Applies the acceptance rules: accepts, retries or stops the task from real check and
+    review results. A decision sets `st.finished`, which ends the loop."""
+    last = st.round >= st.rounds
 
-    async def _finish(self, ctx, status: str, **detail: str) -> Event:
-        wf, st = self._workflow, self._state
-        await wf._finish_task(st.task.id, status, **detail)
-        log_outcome = status if status in ("completed", "blocked") else "not_accepted"
-        await wf._self_log(st.task, log_outcome, st.feedback or st.summary, st.check)
-        st.finished = True
-        return escalate_event(self, ctx, decision=status)
-
-    async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
-        wf, st = self._workflow, self._state
-        last = st.round >= st.rounds
-
-        if st.outcome == "no_change":
-            if last:
-                yield await self._finish(
-                    ctx, "failed", error=f"no file changes after {st.rounds} attempts"
-                )
-            else:
-                yield state_event(self, ctx, decision="retry")
-            return
-
-        check = st.check
-        assert check is not None
-        if not wf.requires_review:
-            if _accepted(check):
-                yield await self._finish(ctx, "completed", summary=st.summary)
-                return
-            st.feedback = _check_feedback(check)
-            if last:
-                yield await self._finish(
-                    ctx, "failed", error=f"checks still failing after {st.rounds} attempts"
-                )
-            else:
-                yield state_event(self, ctx, decision="retry")
-            return
-
-        if st.review_unavailable:
-            attempts = 1 + len(wf.services.settings.review_retry_delays_s)
-            yield await self._finish(
-                ctx,
-                "failed",
-                error=f"review unavailable after {attempts} attempts (all providers failed): "
-                f"{st.review_unavailable}",
-            )
-            return
-        review = st.review
-        assert review is not None
-        if review.verdict == "approved" and _accepted(check):
-            yield await self._finish(ctx, "completed", summary=st.summary)
-            return
-        if review.verdict == "blocked":
-            yield await self._finish(ctx, "blocked", reason=review.summary or "reviewer")
-            return
-        st.feedback = "\n".join(
-            [f"- {f.file or ''}:{f.line or ''} {f.message}" for f in review.findings]
-            + ([_check_feedback(check)] if not _accepted(check) else [])
-        )
-        async with wf.services.sessionmaker.begin() as session:
-            await store.transition(session, st.task.id, "changes_requested")
-            if not last:
-                await store.transition(session, st.task.id, "running")
+    if st.outcome == "no_change":
         if last:
-            yield await self._finish(
-                ctx, "blocked", reason=f"not accepted after {st.rounds} review rounds"
+            await _finish(wf, st, "failed", error=f"no file changes after {st.rounds} attempts")
+        return
+
+    check = st.check
+    assert check is not None
+    if not wf.requires_review:
+        if _accepted(check):
+            await _finish(wf, st, "completed", summary=st.summary)
+            return
+        st.feedback = _check_feedback(check)
+        if last:
+            await _finish(
+                wf, st, "failed", error=f"checks still failing after {st.rounds} attempts"
             )
-        else:
-            yield state_event(self, ctx, decision="retry")
+        return
+
+    if st.review_unavailable:
+        attempts = 1 + len(wf.services.settings.review_retry_delays_s)
+        await _finish(
+            wf,
+            st,
+            "failed",
+            error=f"review unavailable after {attempts} attempts (all providers failed): "
+            f"{st.review_unavailable}",
+        )
+        return
+    review = st.review
+    assert review is not None
+    if review.verdict == "approved" and _accepted(check):
+        await _finish(wf, st, "completed", summary=st.summary)
+        return
+    if review.verdict == "blocked":
+        await _finish(wf, st, "blocked", reason=review.summary or "reviewer")
+        return
+    st.feedback = "\n".join(
+        [f"- {f.file or ''}:{f.line or ''} {f.message}" for f in review.findings]
+        + ([_check_feedback(check)] if not _accepted(check) else [])
+    )
+    async with wf.services.sessionmaker.begin() as session:
+        await store.transition(session, st.task.id, "changes_requested")
+        if not last:
+            await store.transition(session, st.task.id, "running")
+    if last:
+        await _finish(wf, st, "blocked", reason=f"not accepted after {st.rounds} review rounds")
 
 
-def reflection_loop(workflow: "RunWorkflow", state: TaskLoopState) -> LoopAgent:
-    """Reflection pattern: Coder (CrewAI) -> review gate (ADK Reviewer) -> decide."""
-    return LoopAgent(
-        name="reflection_loop",
-        description="Code, check and review until accepted or out of rounds.",
-        sub_agents=[
-            CoderStep(workflow, state),
-            ReviewGate(workflow, state),
-            DecideStep(workflow, state),
-        ],
-        max_iterations=state.rounds,
+def build_task_graph(workflow: "RunWorkflow", state: TaskLoopState) -> CompiledStateGraph:
+    """Reflection pattern: coder (CrewAI) -> review_gate (Reviewer model) -> decide, with an edge
+    back to coder until a decision is made or `state.rounds` rounds have run."""
+
+    async def coder(_: _NoState) -> _NoState:
+        await coder_step(workflow, state)
+        return {}
+
+    async def review_gate(_: _NoState) -> _NoState:
+        await review_gate_step(workflow, state)
+        return {}
+
+    async def decide(_: _NoState) -> _NoState:
+        await decide_step(workflow, state)
+        return {}
+
+    def next_round(_: _NoState) -> str:
+        return END if state.finished or state.round >= state.rounds else "coder"
+
+    graph = StateGraph(_NoState)
+    graph.add_node("coder", coder, metadata={"hex_kind": "step"})
+    graph.add_node("review_gate", review_gate, metadata={"hex_kind": "llm"})
+    graph.add_node("decide", decide, metadata={"hex_kind": "step"})
+    graph.add_edge(START, "coder")
+    graph.add_edge("coder", "review_gate")
+    graph.add_edge("review_gate", "decide")
+    graph.add_conditional_edges("decide", next_round, {"coder": "coder", END: END})
+    return graph.compile(name="reflection_loop")
+
+
+async def run_task_loop(workflow: "RunWorkflow", state: TaskLoopState) -> None:
+    """Run one task's reflection loop as its own graph invocation under the `execute` step."""
+    await run_graph(
+        build_task_graph(workflow, state),
+        {},
+        telemetry=workflow.telemetry,
+        task_id=state.task.id,
+        parent="execute",
+        kind="loop_graph",
+        recursion_limit=3 * state.rounds + 5,
     )
 
 
-def run_orchestrator(workflow: "RunWorkflow", *, requires_planning: bool) -> SequentialAgent:
-    return SequentialAgent(
-        name="run_orchestrator",
-        description="Prepare an isolated worktree, plan, execute tasks, and produce the diff.",
-        sub_agents=[
-            RunStep("prepare", "Snapshot, worktree and MCP workspace server.", workflow.prepare),
-            RunStep(
-                "plan",
-                "Planner crew (or a single task for low complexity) fills the Blackboard.",
-                workflow.plan if requires_planning else workflow.single_task,
-            ),
-            RunStep("execute", "Worker pool runs each task's reflection loop.", workflow.execute),
-            RunStep("finalize", "Diff, file changes, and approval gate.", workflow.finalize),
-        ],
-    )
+def build_run_graph(workflow: "RunWorkflow", *, requires_planning: bool) -> CompiledStateGraph:
+    """Prepare an isolated worktree, plan, execute tasks, and produce the diff."""
+    steps: list[tuple[str, Callable[[], Awaitable[None]]]] = [
+        ("prepare", workflow.prepare),  # snapshot, worktree and MCP workspace server
+        ("plan", workflow.plan if requires_planning else workflow.single_task),
+        ("execute", workflow.execute),  # worker pool runs each task's reflection loop
+        ("finalize", workflow.finalize),  # diff, file changes, and approval gate
+    ]
+    graph = StateGraph(_NoState)
+    previous = START
+    for name, fn in steps:
+
+        async def node(_: _NoState, fn: Callable[[], Awaitable[None]] = fn) -> _NoState:
+            await fn()
+            return {}
+
+        graph.add_node(name, node, metadata={"hex_kind": "step"})
+        graph.add_edge(previous, name)
+        previous = name
+    graph.add_edge(previous, END)
+    return graph.compile(name="run_orchestrator")
 
 
 async def execute_run(
     services: Services, run_id: uuid.UUID, *, requires_planning: bool, requires_review: bool
 ) -> None:
-    """Run the ADK orchestrator; failures mark the run failed with a run_failed event."""
+    """Run the orchestrator graph; failures mark the run failed with a run_failed event."""
     workflow = RunWorkflow(services, run_id, requires_review=requires_review)
     succeeded = False
     try:
-        await run_adk(
-            workflow.telemetry.instrument(
-                run_orchestrator(workflow, requires_planning=requires_planning)
-            ),
-            message=f"Execute run {run_id}",
+        await run_graph(
+            build_run_graph(workflow, requires_planning=requires_planning),
+            {},
+            telemetry=workflow.telemetry,
         )
         succeeded = True
     except Exception as exc:
@@ -863,7 +815,7 @@ async def execute_run(
 
 
 def _innermost(exc: BaseException) -> BaseException:
-    """ADK wraps agent failures (e.g. DynamicNodeFailError.error); unwrap to the cause."""
+    """Frameworks may wrap agent failures (an `error` attribute); unwrap to the cause."""
     seen = set()
     while id(exc) not in seen:
         seen.add(id(exc))

@@ -3,7 +3,7 @@
 A validator is read-only and returns a `ValidatorReport`. Facts come from the sandbox and git,
 not from the model's say-so: the scrutiny validator runs the project's test, typecheck and lint
 in the sandbox and has one review subagent per feature; the security validator scans the added
-lines for secrets deterministically and asks an ADK reviewer to look at the diff.
+lines for secrets deterministically and asks a reviewer model to look at the diff.
 
 A validator that cannot do its job (no provider answered, no valid verdict) reports `needs_user`.
 It never reports `pass` for work it did not check.
@@ -16,15 +16,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from fastapi.concurrency import run_in_threadpool
-from google.adk.agents import LlmAgent
 
 from app.agents import roles
-from app.agents.adk_llm import HexAdkLlm
+from app.agents.chat_model import HexChatModel
 from app.agents.persona import get_persona
 from app.agents.variants import Variant, apply
 from app.context.redact import find_secrets, is_secret_file
 from app.missions.models import CommandResult, Finding, ValidatorReport
-from app.orchestration.adk import model_error_fallback, run_adk, schema_guard
+from app.orchestration.graph import run_agent, structured_call
 from app.orchestration.services import Services
 from app.providers.assignments import route_for
 from app.providers.router import CallContext
@@ -91,11 +90,11 @@ def _blocked(errors: list[str]) -> roles.ReviewResult:
 async def _ask(
     vc: ValidationContext, *, agent: str, persona_id: str, prompt: str
 ) -> tuple[roles.ReviewResult, bool]:
-    """One ADK review: (verdict, available). `available` is False when no provider produced a
+    """One review by a model: (verdict, available). `available` is False when no provider produced a
     valid verdict, which a validator must report as needs_user, never as a pass."""
     async with vc.services.sessionmaker() as session:
         route = await route_for(session, persona_id)
-    llm = HexAdkLlm(
+    llm = HexChatModel(
         router=vc.services.providers,
         ctx=CallContext(
             run_id=vc.run_id,  # type: ignore[arg-type]
@@ -108,25 +107,22 @@ async def _ask(
         max_tokens=2048,
     )
     name = re.sub(r"\W", "_", agent)
-    reviewer = LlmAgent(
-        name=name,
-        description=f"{persona_id} validator review ({agent}).",
-        model=llm,
-        instruction=lambda ctx: prompt,
-        include_contents="none",
-        output_schema=roles.ReviewResult,
-        output_key="review",
-        after_model_callback=schema_guard(roles.ReviewResult, llm, key="review", fallback=_blocked),
-        on_model_error_callback=model_error_fallback(
-            roles.ReviewResult, key="review", fallback=_blocked
+    result = await run_agent(
+        name,
+        lambda: structured_call(
+            llm,
+            roles.ReviewResult,
+            prompt,
+            agent=name,
+            fallback=_blocked,
+            telemetry=vc.telemetry,
+            user_message=f"Review: {agent}",
         ),
+        telemetry=vc.telemetry,
+        parent="validator",
     )
-    state, _ = await run_adk(
-        vc.telemetry.instrument(reviewer, parent="validator"), message=f"Review: {agent}"
-    )
-    result = roles.ReviewResult.model_validate(state["review"])
-    available = state.get("review_schema_status") != "fallback" and result.verdict != "blocked"
-    return result, available
+    available = result.status != "fallback" and result.value.verdict != "blocked"
+    return result.value, available
 
 
 def _findings_from(review: roles.ReviewResult, feature_id: str | None) -> list[Finding]:
@@ -279,7 +275,8 @@ def changed_files(diff: str) -> list[str]:
 async def run_security(
     vc: ValidationContext, milestone_key: str, features: list[FeatureSnap]
 ) -> ValidatorReport:
-    """A deterministic scan for committed secrets and risky files, then an ADK security review."""
+    """A deterministic scan for committed secrets and risky files, then a model's security
+    review."""
     committed = [f for f in features if f.commit]
     findings: list[Finding] = []
     if not committed:

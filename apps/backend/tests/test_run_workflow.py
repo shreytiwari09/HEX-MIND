@@ -244,26 +244,27 @@ async def test_agents_build_reviewed_changes_in_an_isolated_worktree(
         assert expected in types, expected
     assert types.count("task_created") == 2
     assert [e["seq"] for e in events] == list(range(1, len(events) + 1))
-    # Monitoring via callbacks: ADK agent callbacks and CrewAI hooks fed the TelemetryHub.
+    # Monitoring via callbacks: LangGraph callbacks and CrewAI hooks fed the TelemetryHub.
     started = {(e["payload"]["agent"], e["payload"]["framework"]) for e in events
                if e["type"] == "agent_started"}  # fmt: skip
     assert {
-        ("run_orchestrator", "adk"), ("prepare", "adk"), ("plan", "adk"), ("execute", "adk"),
-        ("finalize", "adk"), ("reflection_loop", "adk"), ("coder", "adk"),
-        ("review_gate", "adk"), ("reviewer", "adk"), ("decide", "adk"), ("planner", "crewai"),
+        ("run_orchestrator", "langgraph"), ("prepare", "langgraph"), ("plan", "langgraph"),
+        ("execute", "langgraph"), ("finalize", "langgraph"), ("reflection_loop", "langgraph"),
+        ("coder", "langgraph"), ("review_gate", "langgraph"), ("decide", "langgraph"),
+        ("planner", "crewai"),
     } <= started  # fmt: skip
     assert any(fw == "crewai" and agent.startswith("coder_") for agent, fw in started)
     hooks = Counter((e["payload"]["framework"], e["payload"]["hook"]) for e in events
                     if e["type"] == "callback_fired")  # fmt: skip
-    assert hooks[("adk", "before_model_callback")] == 3  # the Reviewer's three model calls
-    assert hooks[("adk", "after_model_callback")] == 3
+    assert hooks[("langgraph", "model_start")] == 3  # the Reviewer's three model calls
+    assert hooks[("langgraph", "model_end")] == 3
     assert hooks[("crewai", "step_callback")] > 0 and hooks[("crewai", "task_callback")] > 0
     schema = [(e["payload"]["agent"], e["payload"]["status"]) for e in events
               if e["type"] == "schema_validated"]  # fmt: skip
     assert schema == [("router", "valid"), ("planner", "valid")] + [("reviewer", "valid")] * 3
     assert types.count("agent_started") == types.count("agent_finished")
 
-    # A2A: the CrewAI crews ran behind ADK RemoteA2aAgents. Every exchange has both sides,
+    # A2A: the CrewAI crews ran behind A2A client calls. Every exchange has both sides,
     # the full A2A task lifecycle, one A2A task id, and one trace across the boundary.
     kinds = {e["payload"]["agent"]: e["payload"]["kind"] for e in events
              if e["type"] == "agent_started"}  # fmt: skip
@@ -620,3 +621,35 @@ async def test_reviewer_outage_is_retried_not_treated_as_a_verdict(
         assert verdicts == [] and schema == ["fallback", "fallback"]
         failure = next(e for e in events if e["type"] == "task_failed")
         assert "review unavailable after 2 attempts" in failure["payload"]["error"]
+
+
+async def test_reflection_loop_stops_without_decision(monkeypatch) -> None:
+    """The loop ends after `rounds` even when `decide`
+    never decides; the caller then fails the task ("ended without a decision")."""
+    from types import SimpleNamespace
+
+    import app.orchestration.run as run_module
+
+    coder_rounds: list[int] = []
+
+    async def coder(workflow, state) -> None:
+        state.round += 1
+        coder_rounds.append(state.round)
+
+    async def nothing(workflow, state) -> None:
+        return None
+
+    monkeypatch.setattr(run_module, "coder_step", coder)
+    monkeypatch.setattr(run_module, "review_gate_step", nothing)
+    monkeypatch.setattr(run_module, "decide_step", nothing)
+    state = run_module.TaskLoopState(
+        task=SimpleNamespace(id=None, title="t"),
+        worker="coder_01",
+        rounds=3,
+        standards=[],
+        lessons=[],
+    )
+
+    await run_module.run_task_loop(SimpleNamespace(telemetry=None), state)
+
+    assert coder_rounds == [1, 2, 3] and state.finished is False

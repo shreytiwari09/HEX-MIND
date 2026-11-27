@@ -15,7 +15,7 @@ import {
 let seq = 0
 function ev(type: AgentEvent['type'], payload: object, agent_id: string | null = null, task_id: string | null = null): AgentEvent {
   seq += 1
-  return { schema_version: 8, event_id: `e${seq}`, run_id: 'r1', seq, ts: '2026-11-02T10:00:00Z', type, agent_id, task_id, payload } as AgentEvent
+  return { schema_version: 9, event_id: `e${seq}`, run_id: 'r1', seq, ts: '2026-11-02T10:00:00Z', type, agent_id, task_id, payload } as AgentEvent
 }
 
 function runEvents(): AgentEvent[] {
@@ -90,6 +90,22 @@ describe('Blackboard and callbacks', () => {
     expect(log.map((l) => [l.action, l.worker, l.detail])).toEqual([
       ['created', 'planner', 'Todo model'],
       ['claimed', 'coder_01', '']
+    ])
+  })
+
+  it('names LangGraph node starts and ends, and still reads events recorded under ADK', () => {
+    const events = [
+      ev('agent_started', { agent: 'run_orchestrator', framework: 'langgraph', kind: 'graph', parent: null }),
+      ev('agent_started', { agent: 'prepare', framework: 'langgraph', kind: 'step', parent: 'run_orchestrator' }),
+      ev('agent_finished', { agent: 'prepare', framework: 'langgraph', ok: true, duration_ms: 5 }),
+      ev('agent_started', { agent: 'reviewer', framework: 'adk', kind: 'llm', parent: null })
+    ]
+    expect(callbackEvents(events).map(callbackHook)).toEqual(['node_start', 'node_start', 'node_end', 'before_agent_callback'])
+    const agents = deriveAgents(events)
+    expect(agents.map((a) => [a.name, a.framework])).toEqual([
+      ['run_orchestrator', 'langgraph'],
+      ['prepare', 'langgraph'],
+      ['reviewer', 'adk']
     ])
   })
 
